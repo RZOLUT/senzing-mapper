@@ -1,7 +1,7 @@
 # senzing-mapper
 
 ## Overview
-The rzolut_mapper.py is a Python-based data mapping utility that converts the Rzolut dataset into Senzing-compatible JSON.
+The _rzolut_mapper.py_ is a Python-based data mapping utility that converts the Rzolut dataset into Senzing-compatible JSON.
 The mapper standardises, cleans, and validates complex attributes ensuring high-quality input for downstream entity resolution and compliance systems.
 
 Usage :
