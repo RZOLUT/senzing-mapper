@@ -549,6 +549,28 @@ class mapper:
                         }
                     )
 
+                if raw_type == "DRIVER'S LICENSE NUMBER":
+                    json_data["FEATURES"].append(
+                        {
+                            "DRIVERS_LICENSE_NUMBER": value,
+                            "DRIVERS_LICENSE_STATE": country_code
+                        }
+                    )
+
+                if raw_type == "SOCIAL SECURITY NUMBER (SSN)":
+                    json_data["FEATURES"].append(
+                        {
+                            "SSN_NUMBER": value
+                        }
+                    )
+
+                if raw_type == "NATIONAL PROVIDER IDENTIFIER":
+                    json_data["FEATURES"].append(
+                        {
+                            "NPI_NUMBER": value
+                        }
+                    )
+
                 # Append identifier details based on type
                 if raw_type == "PASSPORT NUMBER":
                     json_data["FEATURES"].append(
@@ -562,6 +584,34 @@ class mapper:
                 elif raw_type == "DIRECTOR IDENTIFICATION NUMBER (DIN)":
                     json_data["FEATURES"].append(
                         {"NATIONAL_ID_TYPE": "DIN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "CORPORATE IDENTIFICATION NUMBER (CIN)":
+                    json_data["FEATURES"].append(
+                        {"NATIONAL_ID_TYPE": "CIN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "LIMITED LIABILITY PARTNERSHIP IDENTIFICATION NUMBER (LLPIN)":
+                    json_data["FEATURES"].append(
+                        {"NATIONAL_ID_TYPE": "LLPIN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "FCRN NUMBER":
+                    json_data["FEATURES"].append(
+                        {"NATIONAL_ID_TYPE": "FCRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "FIRM REGISTRATION NUMBER (FRN)":
+                    json_data["FEATURES"].append(
+                        {"NATIONAL_ID_TYPE": "FRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "CEDULA NUMBER":
+                    json_data["FEATURES"].append(
+                        {"NATIONAL_ID_TYPE": "CEDULA", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "PRIMARY STATE REGISTRATION NUMBER (OGRN)":
+                    json_data["FEATURES"].append(
+                        {"NATIONAL_ID_TYPE": "OGRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "SYSTÈME D'IDENTIFICATION DU RÉPERTOIRE DES ENTREPRISES (SIREN) NUMBER":
+                    json_data["FEATURES"].append(
+                        {"NATIONAL_ID_TYPE": "SIREN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
                     )
                 elif raw_type == "PERMANENT ACCOUNT NUMBER (PAN)":
                     json_data["FEATURES"].append(
@@ -583,39 +633,29 @@ class mapper:
                             "OTHER_ID_EXPIRE_DT": identifier_expiry_date,
                         }
                     )
-                elif raw_type == "CORPORATE IDENTIFICATION NUMBER (CIN)":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "CIN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "LIMITED LIABILITY PARTNERSHIP IDENTIFICATION NUMBER (LLPIN)":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "CIN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "FCRN NUMBER":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "FCRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "FIRM REGISTRATION NUMBER (FRN)":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "FRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
                 elif raw_type == "CADASTRO NACIONAL DA PESSOA JURÍDICA (CNPJ)":
                     json_data["FEATURES"].append(
-                        {
-                            "TAX_ID_TYPE": "CNPJ",
-                            "TAX_ID_NUMBER": value,
-                            "TAX_ID_COUNTRY": country_code
-                        }
+                        {"TAX_ID_TYPE": "CNPJ","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "GST NUMBER":
+                    json_data["FEATURES"].append(
+                        {"TAX_ID_TYPE": "GST","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "TAX IDENTIFICATION NUMBER (TIN)":
+                    json_data["FEATURES"].append(
+                        {"TAX_ID_TYPE": "TIN","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
                     )
                 elif raw_type == "CADASTRO DE PESSOAS FÍSICAS (CPF)":
                     json_data["FEATURES"].append(
-                        {
-                            "OTHER_ID_TYPE": "CPF",
-                            "OTHER_ID_NUMBER": value,
-                            "OTHER_ID_COUNTRY": country_code,
-                            "OTHER_ID_ISSUE_DT": identifier_issue_date,
-                            "OTHER_ID_EXPIRE_DT": identifier_expiry_date,
-                        }
+                        {"TAX_ID_TYPE": "CPF","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "INN NUMBER":
+                    json_data["FEATURES"].append(
+                        {"TAX_ID_TYPE": "INN","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                    )
+                elif raw_type == "VALUE ADDED TAX NUMBER (VAT)":
+                    json_data["FEATURES"].append(
+                        {"TAX_ID_TYPE": "VAT","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
                     )
                 else:
                     json_data["FEATURES"].append(
