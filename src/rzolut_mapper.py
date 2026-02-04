@@ -549,7 +549,7 @@ class mapper:
                         }
                     )
 
-                if raw_type == "DRIVER'S LICENSE NUMBER":
+                elif raw_type == "DRIVER'S LICENSE NUMBER":
                     json_data["FEATURES"].append(
                         {
                             "DRIVERS_LICENSE_NUMBER": value,
@@ -557,14 +557,14 @@ class mapper:
                         }
                     )
 
-                if raw_type == "SOCIAL SECURITY NUMBER (SSN)":
+                elif raw_type == "SOCIAL SECURITY NUMBER (SSN)":
                     json_data["FEATURES"].append(
                         {
                             "SSN_NUMBER": value
                         }
                     )
 
-                if raw_type == "NATIONAL PROVIDER IDENTIFIER":
+                elif raw_type == "NATIONAL PROVIDER IDENTIFIER":
                     json_data["FEATURES"].append(
                         {
                             "NPI_NUMBER": value
@@ -572,7 +572,7 @@ class mapper:
                     )
 
                 # Append identifier details based on type
-                if raw_type == "PASSPORT NUMBER":
+                elif raw_type == "PASSPORT NUMBER":
                     json_data["FEATURES"].append(
                         {
                             "PASSPORT_NUMBER": value,
@@ -977,7 +977,7 @@ class mapper:
             json_data["FEATURES"].append({"STATUS_SANCTION": sanctions_status})
 
         # Process watchlist status
-        watchlist_status = self.clean_val(raw_data.get("watchlist_status", ""))
+        watchlist_status = self.clean_val(raw_data.get("watchlists_status", ""))
         if watchlist_status:
             json_data["FEATURES"].append({"STATUS_WATCHLIST": watchlist_status})
 
