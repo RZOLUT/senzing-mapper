@@ -239,7 +239,7 @@ class mapper:
                 print(f"id {raw_data.get('uid', 'unknown')} pep details parse error {ex}")
 
         if positions:
-            json_data["positions"] = json.dumps(positions)
+            json_data["positions"] = self.clean_json_dumps(positions)
 
         # Process alias names with corrected attribute names
         if raw_data.get("alias_name"):
@@ -309,7 +309,7 @@ class mapper:
                 print(f"id {raw_data.get('uid')} relationship parse error {ex}")
 
         if relationship_details:
-            json_data["relationship_details"] = json.dumps(relationship_details)
+            json_data["relationship_details"] = self.clean_json_dumps(relationship_details)
 
         # PEP countries -> payload stringified list
         pep_country_list = raw_data.get("pep_country", []) or []
@@ -325,7 +325,7 @@ class mapper:
                 pep_countries.append(_data)
 
         if pep_countries:
-            json_data["pep_countries"] = json.dumps(pep_countries)
+            json_data["pep_countries"] = self.clean_json_dumps(pep_countries)
 
         # Sources -> payload stringified list
         source_type_list = raw_data.get("source_type", []) or []
@@ -345,7 +345,7 @@ class mapper:
                 sources.append(_data)
 
         if sources:
-            json_data["sources"] = json.dumps(sources)
+            json_data["sources"] = self.clean_json_dumps(sources)
 
         # Add timestamps to json_data
         json_data["CREATED_AT"] = raw_data["entered"]
@@ -597,7 +597,7 @@ class mapper:
                 vessels.append(_data)
 
         if vessels:
-            json_data["vessels"] = json.dumps(vessels)
+            json_data["vessels"] = self.clean_json_dumps(vessels)
 
         # Aircraft -> payload stringified list
         aircraft_manufacture_date_date_list = raw_data.get("aircraft_manufacture_date_date", []) or []
@@ -623,7 +623,7 @@ class mapper:
                 aircraft.append(_data)
 
         if aircraft:
-            json_data["aircraft"] = json.dumps(aircraft)
+            json_data["aircraft"] = self.clean_json_dumps(aircraft)
 
         # Extract incorporation date information -> REGISTRATION_DATE (keep in FEATURES)
         date_of_incorporation_year_list = raw_data.get("date_of_incorporation_year", []) or []
@@ -666,7 +666,7 @@ class mapper:
             if origin_code:
                 countries_of_origin.append(origin_code)
         if countries_of_origin:
-            json_data["countries_of_origin"] = json.dumps(countries_of_origin)
+            json_data["countries_of_origin"] = self.clean_json_dumps(countries_of_origin)
 
         # Ownership details (shareholding) -> payload stringified list
         percentage_of_shareholding_list = raw_data.get("association_percentage_of_shareholding", []) or []
@@ -676,7 +676,7 @@ class mapper:
             if shareholding:
                 shareholdings.append(shareholding)
         if shareholdings:
-            json_data["shareholdings"] = json.dumps(shareholdings)
+            json_data["shareholdings"] = self.clean_json_dumps(shareholdings)
 
         # Age -> payload
         age_in_yrs_list = raw_data.get("age", []) or []
@@ -686,7 +686,7 @@ class mapper:
             if age:
                 ages.append(age)
         if ages:
-            json_data["ages"] = json.dumps(ages)
+            json_data["ages"] = self.clean_json_dumps(ages)
 
         # PHONE_NUMBER -> keep in FEATURES (correct)
         contact_number_list = raw_data.get("contact_number", []) or []
@@ -738,7 +738,7 @@ class mapper:
             if mark:
                 physical_descriptions.append({"type": "distinguishing_marks", "value": mark})
         if physical_descriptions:
-            json_data["physical_descriptions"] = json.dumps(physical_descriptions)
+            json_data["physical_descriptions"] = self.clean_json_dumps(physical_descriptions)
 
         # Profile summaries -> payload stringified list
         profile_summary_list = raw_data.get("profile_summary", []) or []
@@ -748,17 +748,17 @@ class mapper:
             if summary:
                 profile_summaries.append(summary)
         if profile_summaries:
-            json_data["profile_summaries"] = json.dumps(profile_summaries)
+            json_data["profile_summaries"] = self.clean_json_dumps(profile_summaries)
 
         # Ownership details (pipe-delimited) -> payload
         ownership_details = [item.strip() for item in raw_data.get("ownership_details", "").split("|") if item.strip()]
         if ownership_details:
-            json_data["ownership_details"] = json.dumps(ownership_details)
+            json_data["ownership_details"] = self.clean_json_dumps(ownership_details)
 
         # Remarks -> payload
         remarks = [item.strip() for item in raw_data.get("remarks", "").split("|") if item.strip()]
         if remarks:
-            json_data["remarks"] = json.dumps(remarks)
+            json_data["remarks"] = self.clean_json_dumps(remarks)
 
         # Subject country -> payload stringified list
         subject_country_list = raw_data.get("subject_country", []) or []
@@ -768,7 +768,7 @@ class mapper:
             if country:
                 subject_countries.append(country)
         if subject_countries:
-            json_data["subject_countries"] = json.dumps(subject_countries)
+            json_data["subject_countries"] = self.clean_json_dumps(subject_countries)
 
         # Official name, official name local, ISO code, etc. -> root payload scalars
         official_name = self.clean_val(raw_data.get("official_name", ""))
@@ -787,13 +787,13 @@ class mapper:
         abbreviated_name_list = raw_data.get("abbreviated_name", []) or []
         abbreviated_names = [self.clean_val(n) for n in abbreviated_name_list if self.clean_val(n)]
         if abbreviated_names:
-            json_data["abbreviated_names"] = json.dumps(abbreviated_names)
+            json_data["abbreviated_names"] = self.clean_json_dumps(abbreviated_names)
 
         # official_language is a list
         official_language_list = raw_data.get("official_language", []) or []
         official_languages = [self.clean_val(l) for l in official_language_list if self.clean_val(l)]
         if official_languages:
-            json_data["official_languages"] = json.dumps(official_languages)
+            json_data["official_languages"] = self.clean_json_dumps(official_languages)
 
         un_lo_code = self.clean_val(raw_data.get("un_locode", ""))
         if un_lo_code:
@@ -817,33 +817,33 @@ class mapper:
         # PEP status details, sanctions status details, etc. -> payload
         pep_status_list = [item.strip() for item in raw_data.get("pep_status", "").split("|") if item.strip()]
         if pep_status_list:
-            json_data["pep_status_detail"] = json.dumps(pep_status_list)
+            json_data["pep_status_detail"] = self.clean_json_dumps(pep_status_list)
 
         pep_remarks = [self.clean_val(r) for r in (raw_data.get("pep_remarks", []) or []) if self.clean_val(r)]
         if pep_remarks:
-            json_data["pep_remarks"] = json.dumps(pep_remarks)
+            json_data["pep_remarks"] = self.clean_json_dumps(pep_remarks)
 
         sanction_remarks = [
             self.clean_val(r) for r in (raw_data.get("sanctions_remarks", []) or []) if self.clean_val(r)
         ]
         if sanction_remarks:
-            json_data["sanction_remarks"] = json.dumps(sanction_remarks)
+            json_data["sanction_remarks"] = self.clean_json_dumps(sanction_remarks)
 
         watchlist_remarks = [
             self.clean_val(r) for r in (raw_data.get("watchlists_remarks", []) or []) if self.clean_val(r)
         ]
         if watchlist_remarks:
-            json_data["watchlist_remarks"] = json.dumps(watchlist_remarks)
+            json_data["watchlist_remarks"] = self.clean_json_dumps(watchlist_remarks)
 
         enforcement_remarks = [
             self.clean_val(r) for r in (raw_data.get("enforcement_remarks", []) or []) if self.clean_val(r)
         ]
         if enforcement_remarks:
-            json_data["enforcement_remarks"] = json.dumps(enforcement_remarks)
+            json_data["enforcement_remarks"] = self.clean_json_dumps(enforcement_remarks)
 
         apc_remarks = [self.clean_val(r) for r in (raw_data.get("apc_remarks", []) or []) if self.clean_val(r)]
         if apc_remarks:
-            json_data["apc_remarks"] = json.dumps(apc_remarks)
+            json_data["apc_remarks"] = self.clean_json_dumps(apc_remarks)
 
         # Status scalars -> root payload
         sanctions_status = self.clean_val(raw_data.get("sanctions_status", ""))
@@ -986,7 +986,7 @@ class mapper:
                 sanctions.append(_data)
 
         if sanctions:
-            json_data["sanctions"] = json.dumps(sanctions)
+            json_data["sanctions"] = self.clean_json_dumps(sanctions)
 
         # Associated -> payload stringified list
         associated_individual_name_list = raw_data.get("association_associated_individual_name", []) or []
@@ -1016,7 +1016,7 @@ class mapper:
                 associated.append(_data)
 
         if associated:
-            json_data["associated"] = json.dumps(associated)
+            json_data["associated"] = self.clean_json_dumps(associated)
 
         # Restrictions -> payload stringified list
         restrictions_list = raw_data.get("restrictions", []) or []
@@ -1026,7 +1026,7 @@ class mapper:
             if restriction:
                 restrictions.append(restriction)
         if restrictions:
-            json_data["restrictions"] = json.dumps(restrictions)
+            json_data["restrictions"] = self.clean_json_dumps(restrictions)
 
         # Watchlists -> payload stringified list
         watchlist_authority_list = raw_data.get("watchlists_authority", []) or []
@@ -1086,7 +1086,7 @@ class mapper:
                 watchlists.append(_data)
 
         if watchlists:
-            json_data["watchlists"] = json.dumps(watchlists)
+            json_data["watchlists"] = self.clean_json_dumps(watchlists)
 
         # Enforcement -> payload stringified list
         enforcement_legal_action_type_list = raw_data.get("enforcement_legal_action_type", []) or []
@@ -1183,7 +1183,7 @@ class mapper:
                 enforcements.append(_data)
 
         if enforcements:
-            json_data["enforcements"] = json.dumps(enforcements)
+            json_data["enforcements"] = self.clean_json_dumps(enforcements)
 
         # APC -> payload stringified list
         apc_group_id_list = raw_data.get("apc_group_id", []) or []
@@ -1333,7 +1333,7 @@ class mapper:
                 apc_items.append(_data)
 
         if apc_items:
-            json_data["apc"] = json.dumps(apc_items)
+            json_data["apc"] = self.clean_json_dumps(apc_items)
 
         # Litigation -> payload stringified list
         court_name_list = raw_data.get("litigation_court_name", []) or []
@@ -1371,7 +1371,7 @@ class mapper:
                 litigations.append(_data)
 
         if litigations:
-            json_data["litigations"] = json.dumps(litigations)
+            json_data["litigations"] = self.clean_json_dumps(litigations)
 
         # Pincode -> payload stringified list
         pincode_high_risk_area = self.clean_val(raw_data.get("pincode_high_risk_area", ""))
@@ -1399,7 +1399,7 @@ class mapper:
                 "state": pincode_state,
                 "country": pincode_country,
             }
-            json_data["pincode"] = json.dumps([pincode_data])
+            json_data["pincode"] = self.clean_json_dumps([pincode_data])
 
         # Others -> payload stringified list
         others_authority_list = raw_data.get("others_authority", []) or []
@@ -1465,7 +1465,7 @@ class mapper:
                 others.append(_data)
 
         if others:
-            json_data["others"] = json.dumps(others)
+            json_data["others"] = self.clean_json_dumps(others)
 
         # Remove empty dictionaries or dictionaries with only empty values
         json_data["FEATURES"] = [
@@ -1541,6 +1541,11 @@ class mapper:
             for v in d:
                 self.remove_empty_tags(v)
         return d
+
+    def clean_json_dumps(self, data):
+        """json.dumps that strips blank/None values from dicts first."""
+        self.remove_empty_tags(data)
+        return json.dumps(data)
 
     # ----------------------------------------
     def update_stat(self, cat1, cat2, example=None):
