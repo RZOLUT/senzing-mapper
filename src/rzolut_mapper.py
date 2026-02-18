@@ -12,9 +12,6 @@ import time
 from datetime import datetime
 from itertools import zip_longest
 
-import pandas as pd
-from dateutil.parser import parse as dateparse
-
 
 # =========================
 class mapper:
@@ -27,57 +24,51 @@ class mapper:
 
     # ----------------------------------------
     def map(self, raw_data, input_row_num=None):
-        json_data = {}
 
         # Clean the raw data values using the clean_value method
         for attribute in raw_data:
             raw_data[attribute] = self.clean_value(raw_data[attribute])
 
-        json_data["FEATURES"] = (
-            []
-        )  # Initialize the FEATURES list to hold additional attributes
-
         # Set essential fields for the JSON data
-        json_data["RECORD_ID"] = raw_data["uid"]  # Unique identifier for the record
-        json_data["DATA_SOURCE"] = args.data_source  # Source of the data
+        json_data = {"DATA_SOURCE": args.data_source, "RECORD_ID": raw_data["uid"], "FEATURES": []}
 
-        # Record type is optional, but should be 'PERSON' or 'ORGANIZATION'
-        self.update_stat(
-            raw_data.get("subject_type", "").upper(), raw_data["uid"]
-        )  # Update statistics based on type
-        json_data["RECORD_TYPE"] = (
-            "PERSON"
-            if raw_data.get("subject_type", "") == "Individual"
-            else "ORGANIZATION"
-        )
-        json_data["TYPE"] = raw_data.get(
-            "subject_type"
-        )  # Store the type from raw_data, if available
+        # Record type: PERSON or ORGANIZATION (now in FEATURES)
+        record_type = "PERSON" if raw_data.get("subject_type", "") == "Individual" else "ORGANIZATION"
+        json_data["FEATURES"].append({"RECORD_TYPE": record_type})
 
-        # Set primary names
-        json_data["PRIMARY_NAME_FIRST"] = raw_data.get("first_name")  # First name
-        json_data["PRIMARY_NAME_MIDDLE"] = raw_data.get("middle_name")  # Middle name
-        json_data["PRIMARY_NAME_LAST"] = raw_data.get("last_name")  # Last name
+        # Store the subject_type as root payload
+        json_data["subject_type"] = raw_data.get("subject_type")
 
-        # Primary name of the organization
-        json_data["PRIMARY_NAME_ORG"] = raw_data.get("name")
+        # Set primary names (now in FEATURES with correct attribute names)
+        if record_type == "PERSON":
+            name_feat = {"NAME_TYPE": "PRIMARY"}
+            if raw_data.get("first_name"):
+                name_feat["NAME_FIRST"] = raw_data["first_name"]
+            if raw_data.get("middle_name"):
+                name_feat["NAME_MIDDLE"] = raw_data["middle_name"]
+            if raw_data.get("last_name"):
+                name_feat["NAME_LAST"] = raw_data["last_name"]
+            if len(name_feat) > 1:
+                json_data["FEATURES"].append(name_feat)
+        else:
+            if raw_data.get("name"):
+                json_data["FEATURES"].append({"NAME_TYPE": "PRIMARY", "NAME_ORG": raw_data["name"]})
 
         # Append gender information if available
         if raw_data.get("gender", ""):
             json_data["FEATURES"].append({"GENDER": raw_data.get("gender", "")})
 
-        # Process image URLs, split by '|', and add to FEATURES
+        # Process image URLs -> root payload (not FEATURES)
         if raw_data.get("image_url"):
             img = raw_data.get("image_url", "")
-            if img.strip():  # Ensure the image URL is not empty
-                json_data["FEATURES"].append({"image_url": img.strip()})
+            if img.strip():
+                json_data["image_url"] = img.strip()
 
         # Process date of birth information
         date_of_birth_year_list = raw_data.get("date_of_birth_year", []) or []
         date_of_birth_month_list = raw_data.get("date_of_birth_month", []) or []
         date_of_birth_date_list = raw_data.get("date_of_birth_date", []) or []
 
-        # Loop through each component of the date of birth
         for year, month, date in zip_longest(
             date_of_birth_year_list,
             date_of_birth_month_list,
@@ -85,11 +76,10 @@ class mapper:
             fillvalue="",
         ):
             try:
-                y = self.clean_val(year)  # Year
-                m = self.clean_val(month)  # Month
-                d = self.clean_val(date)  # Day
+                y = self.clean_val(year)
+                m = self.clean_val(month)
+                d = self.clean_val(date)
 
-                # Construct date of birth based on available components
                 if y and m and d:
                     json_data["FEATURES"].append({"DATE_OF_BIRTH": f"{y}-{m}-{d}"})
                 elif y and m:
@@ -99,21 +89,19 @@ class mapper:
                 elif y:
                     json_data["FEATURES"].append({"DATE_OF_BIRTH": y})
             except Exception as ex:
-                print(
-                    f"id {raw_data['uid']} date_of_birth parse error {ex}"
-                )  # Log parsing errors
+                print(f"id {raw_data['uid']} date_of_birth parse error {ex}")
 
         # Process date of death information
         date_of_death_year_list = raw_data.get("date_of_death_year", []) or []
         date_of_death_month_list = raw_data.get("date_of_death_month", []) or []
         date_of_death_date_list = raw_data.get("date_of_death_date", []) or []
-        is_deceased = raw_data.get(
-            "deceased_status", ""
-        )  # Check if the individual is deceased
-        json_data["country"] = is_deceased  # Store deceased status in 'country' field
+        is_deceased = raw_data.get("deceased_status", "")
+
+        # Fix: deceased_status -> root payload (was incorrectly mapped to "country")
+        if is_deceased:
+            json_data["deceased_status"] = is_deceased
 
         if is_deceased:
-            # Loop through each component of the date of death
             for year, month, date in zip_longest(
                 date_of_death_year_list,
                 date_of_death_month_list,
@@ -121,11 +109,10 @@ class mapper:
                 fillvalue="",
             ):
                 try:
-                    y = self.clean_val(year)  # Year
-                    m = self.clean_val(month)  # Month
-                    d = self.clean_val(date)  # Day
+                    y = self.clean_val(year)
+                    m = self.clean_val(month)
+                    d = self.clean_val(date)
 
-                    # Construct date of death based on available components
                     if y and m and d:
                         json_data["FEATURES"].append({"DATE_OF_DEATH": f"{y}-{m}-{d}"})
                     elif y and m:
@@ -135,9 +122,7 @@ class mapper:
                     elif y:
                         json_data["FEATURES"].append({"DATE_OF_DEATH": y})
                 except Exception as ex:
-                    print(
-                        f"id {raw_data['uid']} date_of_death parse error {ex}"
-                    )  # Log parsing errors
+                    print(f"id {raw_data['uid']} date_of_death parse error {ex}")
 
         # Retrieve and split address-related data into lists
         address_type_list = raw_data.get("address_type", []) or []
@@ -148,7 +133,6 @@ class mapper:
         address_country_list = raw_data.get("address_country", []) or []
         address_country_code_list = raw_data.get("address_country_code", []) or []
 
-        # Iterate through each address entry to construct address data
         for (
             addr_type,
             street,
@@ -168,19 +152,16 @@ class mapper:
             fillvalue="",
         ):
             try:
+                # Fix: removed ADDR_LINE2 = country (wrong mapping)
                 _data = {
                     "ADDR_TYPE": self.clean_val(addr_type),
                     "ADDR_LINE1": self.clean_val(street),
-                    "ADDR_LINE2": self.clean_val(
-                        country
-                    ),  # <-- you may want to change this to proper ADDRESS_LINE2
                     "ADDR_CITY": self.clean_val(city),
                     "ADDR_STATE": self.clean_val(province),
                     "ADDR_POSTAL_CODE": self.clean_val(postal),
                     "ADDR_COUNTRY": self.clean_val(country_code),
                 }
 
-                # Append only if at least one field is present
                 if any(v for v in _data.values()):
                     json_data["FEATURES"].append(_data)
 
@@ -188,9 +169,7 @@ class mapper:
                 print(f"id {raw_data.get('uid')} address parse error {ex}")
 
         # Set SOE status based on raw data
-        json_data["soe_status"] = (
-            "Yes" if "Yes" in raw_data.get("soe_status", "") else ""
-        )
+        json_data["soe_status"] = "Yes" if "Yes" in raw_data.get("soe_status", "") else ""
 
         # Retrieve and split PEP-related data into lists
         pep_type_list = raw_data.get("pep_type", []) or []
@@ -198,32 +177,23 @@ class mapper:
         position_list = raw_data.get("position", []) or []
         org_name_list = raw_data.get("organization_name", []) or []
 
-        # Retrieve and split position date-related data into lists
-        # Parse position dates as lists
-        position_start_date_year_list = (
-            raw_data.get("position_start_date_year", []) or []
-        )
-        position_start_date_month_list = (
-            raw_data.get("position_start_date_month", []) or []
-        )
-        position_start_date_date_list = (
-            raw_data.get("position_start_date_date", []) or []
-        )
+        position_start_date_year_list = raw_data.get("position_start_date_year", []) or []
+        position_start_date_month_list = raw_data.get("position_start_date_month", []) or []
+        position_start_date_date_list = raw_data.get("position_start_date_date", []) or []
 
         position_end_date_year_list = raw_data.get("position_end_date_year", []) or []
         position_end_date_month_list = raw_data.get("position_end_date_month", []) or []
         position_end_date_date_list = raw_data.get("position_end_date_date", []) or []
 
-        # Add group associations to json_data from organization names
+        # Add group associations with GROUP_ASSOCIATION_TYPE
         for name in org_name_list:
-            if (
-                name.strip() and name != "~"
-            ):  # Check if the organization name is not empty
+            if name.strip() and name != "~":
                 json_data["FEATURES"].append(
-                    {"GROUP_ASSOCIATION_ORG_NAME": name.strip()}
+                    {"GROUP_ASSOCIATION_TYPE": "MEMBER", "GROUP_ASSOCIATION_ORG_NAME": name.strip()}
                 )
 
-        # Iterate through positions and create data for each
+        # PEP positions -> payload stringified list
+        positions = []
         for (
             pep_type,
             pep_level,
@@ -263,63 +233,44 @@ class mapper:
                 }
 
                 if any(value for value in _data.values()):
-                    json_data["FEATURES"].append(_data)
+                    positions.append(_data)
 
             except Exception as ex:
-                print(
-                    f"id {raw_data.get('uid', 'unknown')} pep details parse error {ex}"
-                )
+                print(f"id {raw_data.get('uid', 'unknown')} pep details parse error {ex}")
 
-        # Check if 'alias_name' exists in the raw data
+        if positions:
+            json_data["positions"] = json.dumps(positions)
+
+        # Process alias names with corrected attribute names
         if raw_data.get("alias_name"):
-            # Split alias-related data into lists
             alias_names = raw_data.get("alias_name", []) or []
             alias_types = raw_data.get("alias_type", []) or []
             alias_scripts = raw_data.get("alias_script", []) or []
             alias_languages = raw_data.get("alias_language", []) or []
 
-            # Iterate through the alias lists simultaneously
             for alias_name, alias_type, alias_script, alias_language in zip_longest(
                 alias_names, alias_types, alias_scripts, alias_languages
             ):
                 alias_name = self.clean_val(alias_name)
-                alias_type = self.clean_val(alias_type)
-                alias_script = self.clean_val(alias_script)
-                alias_language = self.clean_val(alias_language)
 
-                if alias_name:  # Ensure alias_name is not empty
-                    if json_data["RECORD_TYPE"] == "PERSON":
-                        # Append person-specific alias data
-                        json_data["FEATURES"].append(
-                            {
-                                "ALIAS_NAME_FULL": alias_name,
-                                "ALIAS_TYPE": alias_type,
-                                "ALIAS_SCRIPT": alias_script,
-                                "ALIAS_LANGUAGE": alias_language,
-                            }
-                        )
+                if alias_name:
+                    if record_type == "PERSON":
+                        json_data["FEATURES"].append({"NAME_TYPE": "AKA", "NAME_FULL": alias_name})
                     else:
-                        json_data["FEATURES"].append(
-                            {
-                                "ALIAS_NAME_ORG": alias_name,
-                                "ALIAS_TYPE": alias_type,
-                                "ALIAS_SCRIPT": alias_script,
-                                "ALIAS_LANGUAGE": alias_language,
-                            }
-                        )
+                        json_data["FEATURES"].append({"NAME_TYPE": "AKA", "NAME_ORG": alias_name})
 
         # Retrieve relationship-related data
-        relationship_subject_type_list = (
-            raw_data.get("association_subject_type", []) or []
-        )
+        relationship_subject_type_list = raw_data.get("association_subject_type", []) or []
         relationship_name_list = raw_data.get("association_name", []) or []
         relationship_type_list = raw_data.get("association_relationship_type", []) or []
-        relationship_type_desc_list = (
-            raw_data.get("association_relationship_type_description", []) or []
-        )
+        relationship_type_desc_list = raw_data.get("association_relationship_type_description", []) or []
         relationship_uid_list = raw_data.get("association_relationship_uid", []) or []
 
-        # Append relationship details to json_data
+        # Add one REL_ANCHOR per record (always, since other records may point to this one)
+        json_data["FEATURES"].append({"REL_ANCHOR_DOMAIN": args.data_source, "REL_ANCHOR_KEY": raw_data["uid"]})
+
+        # Build relationship details payload and proper REL_POINTER features
+        relationship_details = []
         for rel_subject_type, rel_name, rel_type, rel_type_desc, rel_uid in zip_longest(
             relationship_subject_type_list,
             relationship_name_list,
@@ -334,51 +285,54 @@ class mapper:
                 rel_type_desc = self.clean_val(rel_type_desc)
                 rel_uid = self.clean_val(rel_uid)
 
-                # Always append the base relationship record
-                json_data["FEATURES"].append(
-                    {
-                        "RELATIONSHIP_SUBJECT_TYPE": rel_subject_type,
-                        "RELATIONSHIP_NAME": rel_name,
-                        "RELATIONSHIP_TYPE": rel_type,
-                        "RELATIONSHIP_TYPE_DESCRIPTION": rel_type_desc,
-                        "RELATIONSHIP_UID": rel_uid,
-                    }
-                )
+                _detail = {
+                    "subject_type": rel_subject_type,
+                    "name": rel_name,
+                    "type": rel_type,
+                    "type_description": rel_type_desc,
+                    "uid": rel_uid,
+                }
+                if any(_detail.values()):
+                    relationship_details.append(_detail)
 
-                # Append relationship pointers if we have a UID
+                # Proper REL_POINTER
                 if rel_uid:
-                    json_data["FEATURES"].append({"REL_POINTER_KEY": rel_uid})
-                    json_data["FEATURES"].append(
-                        {"REL_ANCHOR_DOMAIN": args.data_source + "_UID"}
-                    )
-                    json_data["FEATURES"].append({"REL_ANCHOR_KEY": raw_data["uid"]})
+                    pointer = {
+                        "REL_POINTER_DOMAIN": args.data_source,
+                        "REL_POINTER_KEY": rel_uid,
+                    }
                     if rel_type:
-                        json_data["FEATURES"].append({"REL_POINTER_ROLE": rel_type})
+                        pointer["REL_POINTER_ROLE"] = rel_type
+                    json_data["FEATURES"].append(pointer)
 
             except Exception as ex:
                 print(f"id {raw_data.get('uid')} relationship parse error {ex}")
 
-        # Retrieve pep-country data as lists
+        if relationship_details:
+            json_data["relationship_details"] = json.dumps(relationship_details)
+
+        # PEP countries -> payload stringified list
         pep_country_list = raw_data.get("pep_country", []) or []
         pep_country_code_list = raw_data.get("pep_country_code", []) or []
 
-        # Append source details to json_data
-        for pep_country, pep_country_code in zip_longest(
-            pep_country_list, pep_country_code_list
-        ):
+        pep_countries = []
+        for pep_country, pep_country_code in zip_longest(pep_country_list, pep_country_code_list):
             pep_country = self.clean_val(pep_country)
             pep_country_code = self.clean_val(pep_country_code)
 
-            json_data["FEATURES"].append(
-                {"PEP_COUNTRY": pep_country, "PEP_COUNTRY_CODE": pep_country_code}
-            )
+            _data = {"country": pep_country, "country_code": pep_country_code}
+            if any(_data.values()):
+                pep_countries.append(_data)
 
-        # Retrieve source-related data as lists
+        if pep_countries:
+            json_data["pep_countries"] = json.dumps(pep_countries)
+
+        # Sources -> payload stringified list
         source_type_list = raw_data.get("source_type", []) or []
         source_list = raw_data.get("external_sources", []) or []
         source_description_list = raw_data.get("source_description", []) or []
 
-        # Append source details to json_data
+        sources = []
         for source_type, source, source_description in zip_longest(
             source_type_list, source_list, source_description_list
         ):
@@ -386,23 +340,20 @@ class mapper:
             source = self.clean_val(source)
             source_description = self.clean_val(source_description)
 
-            json_data["FEATURES"].append(
-                {
-                    "SOURCE_TYPE": source_type,
-                    "SOURCE": source,
-                    "SOURCE_DESCRIPTION": source_description,
-                }
-            )
+            _data = {"source_type": source_type, "source": source, "source_description": source_description}
+            if any(_data.values()):
+                sources.append(_data)
+
+        if sources:
+            json_data["sources"] = json.dumps(sources)
 
         # Add timestamps to json_data
         json_data["CREATED_AT"] = raw_data["entered"]
         json_data["UPDATED_AT"] = raw_data["updated"]
 
-        # Process citizenship data as lists
+        # Process citizenship -> fix to just CITIZENSHIP with country_code preferred
         citizenship_country_list = raw_data.get("citizenship", []) or []
-        citizenship_country_code_list = (
-            raw_data.get("citizenship_country_code", []) or []
-        )
+        citizenship_country_code_list = raw_data.get("citizenship_country_code", []) or []
 
         for citizenship_country, citizenship_country_code in zip_longest(
             citizenship_country_list, citizenship_country_code_list
@@ -410,18 +361,13 @@ class mapper:
             citizenship_country = self.clean_val(citizenship_country)
             citizenship_country_code = self.clean_val(citizenship_country_code)
 
-            json_data["FEATURES"].append(
-                {
-                    "CITIZENSHIP": citizenship_country,
-                    "CITIZENSHIP_COUNTRY_CODE": citizenship_country_code,
-                }
-            )
+            val = citizenship_country_code or citizenship_country
+            if val:
+                json_data["FEATURES"].append({"CITIZENSHIP": val})
 
-        # Process nationality data as lists
+        # Process nationality -> fix to just NATIONALITY with country_code preferred
         nationality_country_list = raw_data.get("nationality_country", []) or []
-        nationality_country_code_list = (
-            raw_data.get("nationality_country_code", []) or []
-        )
+        nationality_country_code_list = raw_data.get("nationality_country_code", []) or []
 
         for nationality_country, nationality_country_code in zip_longest(
             nationality_country_list, nationality_country_code_list
@@ -429,42 +375,24 @@ class mapper:
             nationality_country = self.clean_val(nationality_country)
             nationality_country_code = self.clean_val(nationality_country_code)
 
-            json_data["FEATURES"].append(
-                {
-                    "NATIONALITY": nationality_country,
-                    "NATIONALITY_COUNTRY_CODE": nationality_country_code,
-                }
-            )
+            val = nationality_country_code or nationality_country
+            if val:
+                json_data["FEATURES"].append({"NATIONALITY": val})
 
         # Process identifiers
-        # Parse identifier lists as proper Python lists
         identifier_name_list = raw_data.get("identifier_name", []) or []
         identifier_value_list = raw_data.get("identifier_value", []) or []
         identifier_country_list = raw_data.get("identifier_country", []) or []
         identifier_country_code_list = raw_data.get("identifier_country_code", []) or []
-        identifier_issuing_authority_list = (
-            raw_data.get("identifier_issuing_authority", []) or []
-        )
+        identifier_issuing_authority_list = raw_data.get("identifier_issuing_authority", []) or []
 
-        identifier_issue_date_date_list = (
-            raw_data.get("identifier_issue_date_date", []) or []
-        )
-        identifier_issue_date_month_list = (
-            raw_data.get("identifier_issue_date_month", []) or []
-        )
-        identifier_issue_date_year_list = (
-            raw_data.get("identifier_issue_date_year", []) or []
-        )
+        identifier_issue_date_date_list = raw_data.get("identifier_issue_date_date", []) or []
+        identifier_issue_date_month_list = raw_data.get("identifier_issue_date_month", []) or []
+        identifier_issue_date_year_list = raw_data.get("identifier_issue_date_year", []) or []
 
-        identifier_expiry_date_date_list = (
-            raw_data.get("identifier_expiry_date_date", []) or []
-        )
-        identifier_expiry_date_month_list = (
-            raw_data.get("identifier_expiry_date_month", []) or []
-        )
-        identifier_expiry_date_year_list = (
-            raw_data.get("identifier_expiry_date_year", []) or []
-        )
+        identifier_expiry_date_date_list = raw_data.get("identifier_expiry_date_date", []) or []
+        identifier_expiry_date_month_list = raw_data.get("identifier_expiry_date_month", []) or []
+        identifier_expiry_date_year_list = raw_data.get("identifier_expiry_date_year", []) or []
 
         for (
             raw_type,
@@ -502,11 +430,10 @@ class mapper:
                 identifier_expiry_date = ""
 
                 try:
-                    y = self.clean_val(issue_y)  # Year
-                    m = self.clean_val(issue_m)  # Month
-                    d = self.clean_val(issue_d)  # Day
+                    y = self.clean_val(issue_y)
+                    m = self.clean_val(issue_m)
+                    d = self.clean_val(issue_d)
 
-                    # Construct date of birth based on available components
                     if y and m and d:
                         identifier_issue_date = f"{y}-{m}-{d}"
                     elif y and m:
@@ -516,16 +443,13 @@ class mapper:
                     elif y:
                         identifier_issue_date = y
                 except Exception as ex:
-                    print(
-                        f"id {raw_data['uid']} identifier_issue_date parse error {ex}"
-                    )  # Log parsing errors
+                    print(f"id {raw_data['uid']} identifier_issue_date parse error {ex}")
 
                 try:
-                    y = self.clean_val(expiry_y)  # Year
-                    m = self.clean_val(expiry_m)  # Month
-                    d = self.clean_val(expiry_d)  # Day
+                    y = self.clean_val(expiry_y)
+                    m = self.clean_val(expiry_m)
+                    d = self.clean_val(expiry_d)
 
-                    # Construct date of birth based on available components
                     if y and m and d:
                         identifier_expiry_date = f"{y}-{m}-{d}"
                     elif y and m:
@@ -535,50 +459,34 @@ class mapper:
                     elif y:
                         identifier_expiry_date = y
                 except Exception as ex:
-                    print(
-                        f"id {raw_data['uid']} identifier_expiry_date parse error {ex}"
-                    )  # Log parsing errors
+                    print(f"id {raw_data['uid']} identifier_expiry_date parse error {ex}")
 
                 # Update statistics for identifier type
                 self.update_stat("!IDTYPE", raw_type, value)
 
                 if raw_type == "LEGAL ENTITY IDENTIFIER (LEI)":
-                    json_data["FEATURES"].append(
-                        {
-                            "LEI_NUMBER": value
-                        }
-                    )
+                    json_data["FEATURES"].append({"LEI_NUMBER": value})
 
                 elif raw_type == "DRIVER'S LICENSE NUMBER":
                     json_data["FEATURES"].append(
                         {
                             "DRIVERS_LICENSE_NUMBER": value,
-                            "DRIVERS_LICENSE_STATE": country_code
+                            "DRIVERS_LICENSE_STATE": country_code,
                         }
                     )
 
                 elif raw_type == "SOCIAL SECURITY NUMBER (SSN)":
-                    json_data["FEATURES"].append(
-                        {
-                            "SSN_NUMBER": value
-                        }
-                    )
+                    json_data["FEATURES"].append({"SSN_NUMBER": value})
 
                 elif raw_type == "NATIONAL PROVIDER IDENTIFIER":
-                    json_data["FEATURES"].append(
-                        {
-                            "NPI_NUMBER": value
-                        }
-                    )
+                    json_data["FEATURES"].append({"NPI_NUMBER": value})
 
-                # Append identifier details based on type
+                # Fix: drop date attributes from passport
                 elif raw_type == "PASSPORT NUMBER":
                     json_data["FEATURES"].append(
                         {
                             "PASSPORT_NUMBER": value,
                             "PASSPORT_COUNTRY": country_code,
-                            "PASSPORT_ISSUE_DT": identifier_issue_date,
-                            "PASSPORT_EXPIRE_DT": identifier_expiry_date,
                         }
                     )
                 elif raw_type == "DIRECTOR IDENTIFICATION NUMBER (DIN)":
@@ -609,75 +517,70 @@ class mapper:
                     json_data["FEATURES"].append(
                         {"NATIONAL_ID_TYPE": "OGRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
                     )
-                elif raw_type == "SYSTÈME D'IDENTIFICATION DU RÉPERTOIRE DES ENTREPRISES (SIREN) NUMBER":
+                elif raw_type == "SYST\u00c8ME D'IDENTIFICATION DU R\u00c9PERTOIRE DES ENTREPRISES (SIREN) NUMBER":
                     json_data["FEATURES"].append(
                         {"NATIONAL_ID_TYPE": "SIREN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
                     )
+                # Fix: drop date attributes from PAN tax_id
                 elif raw_type == "PERMANENT ACCOUNT NUMBER (PAN)":
                     json_data["FEATURES"].append(
                         {
                             "TAX_ID_TYPE": "PAN",
                             "TAX_ID_NUMBER": value,
                             "TAX_ID_COUNTRY": country_code,
-                            "TAX_ID_ISSUE_DT": identifier_issue_date,
-                            "TAX_ID_EXPIRE_DT": identifier_expiry_date,
                         }
                     )
+                # Fix: drop date attributes from LICENSE
                 elif raw_type == "LICENSE NUMBER":
                     json_data["FEATURES"].append(
                         {
                             "OTHER_ID_TYPE": "LICENSE",
                             "OTHER_ID_NUMBER": value,
                             "OTHER_ID_COUNTRY": country_code,
-                            "OTHER_ID_ISSUE_DT": identifier_issue_date,
-                            "OTHER_ID_EXPIRE_DT": identifier_expiry_date,
                         }
                     )
-                elif raw_type == "CADASTRO NACIONAL DA PESSOA JURÍDICA (CNPJ)":
+                elif raw_type == "CADASTRO NACIONAL DA PESSOA JUR\u00cdDICA (CNPJ)":
                     json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "CNPJ","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                        {"TAX_ID_TYPE": "CNPJ", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
                     )
                 elif raw_type == "GST NUMBER":
                     json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "GST","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                        {"TAX_ID_TYPE": "GST", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
                     )
                 elif raw_type == "TAX IDENTIFICATION NUMBER (TIN)":
                     json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "TIN","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                        {"TAX_ID_TYPE": "TIN", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
                     )
-                elif raw_type == "CADASTRO DE PESSOAS FÍSICAS (CPF)":
+                elif raw_type == "CADASTRO DE PESSOAS F\u00cdSICAS (CPF)":
                     json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "CPF","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                        {"TAX_ID_TYPE": "CPF", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
                     )
                 elif raw_type == "INN NUMBER":
                     json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "INN","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                        {"TAX_ID_TYPE": "INN", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
                     )
                 elif raw_type == "VALUE ADDED TAX NUMBER (VAT)":
                     json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "VAT","TAX_ID_NUMBER": value,"TAX_ID_COUNTRY": country_code}
+                        {"TAX_ID_TYPE": "VAT", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
                     )
+                # Fix: drop date attributes from fallback OTHER_ID
                 else:
                     json_data["FEATURES"].append(
                         {
                             "OTHER_ID_TYPE": raw_type,
                             "OTHER_ID_NUMBER": value,
                             "OTHER_ID_COUNTRY": country_code,
-                            "OTHER_ID_ISSUE_DT": identifier_issue_date,
-                            "OTHER_ID_EXPIRE_DT": identifier_expiry_date,
                         }
                     )
             except Exception as ex:
-                print(
-                    f"id {raw_data['uid']} identifier parse error {ex}"
-                )  # Log any parsing errors
+                print(f"id {raw_data['uid']} identifier parse error {ex}")
 
-        # Process vessel information as lists
+        # Vessels -> payload stringified list
         vessel_type_list = raw_data.get("vessel_type", []) or []
         current_country_flag_list = raw_data.get("current_country_flag", []) or []
         former_country_flag_list = raw_data.get("former_country_flag", []) or []
 
-        # Compile vessel data into features
+        vessels = []
         for vessel_type, curr_country, form_country in zip_longest(
             vessel_type_list, current_country_flag_list, former_country_flag_list
         ):
@@ -685,28 +588,24 @@ class mapper:
             curr_country = self.clean_val(curr_country)
             form_country = self.clean_val(form_country)
 
-            json_data["FEATURES"].append(
-                {
-                    "VESSEL_TYPE": vessel_type,
-                    "VESSEL_CURRENT_COUNTRY": curr_country,
-                    "VESSEL_FORMER_COUNTRY": form_country,
-                }
-            )
+            _data = {
+                "vessel_type": vessel_type,
+                "current_country_flag": curr_country,
+                "former_country_flag": form_country,
+            }
+            if any(_data.values()):
+                vessels.append(_data)
 
-        # Process aircraft information
-        # Process aircraft information as lists
-        aircraft_manufacture_date_date_list = (
-            raw_data.get("aircraft_manufacture_date_date", []) or []
-        )
-        aircraft_manufacture_date_month_list = (
-            raw_data.get("aircraft_manufacture_date_month", []) or []
-        )
-        aircraft_manufacture_date_year_list = (
-            raw_data.get("aircraft_manufacture_date_year", []) or []
-        )
+        if vessels:
+            json_data["vessels"] = json.dumps(vessels)
+
+        # Aircraft -> payload stringified list
+        aircraft_manufacture_date_date_list = raw_data.get("aircraft_manufacture_date_date", []) or []
+        aircraft_manufacture_date_month_list = raw_data.get("aircraft_manufacture_date_month", []) or []
+        aircraft_manufacture_date_year_list = raw_data.get("aircraft_manufacture_date_year", []) or []
         aircraft_model = raw_data.get("aircraft_model", "")
 
-        # Compile aircraft data into features
+        aircraft = []
         for d, m, y, model in zip_longest(
             aircraft_manufacture_date_date_list,
             aircraft_manufacture_date_month_list,
@@ -714,27 +613,23 @@ class mapper:
             aircraft_model,
             fillvalue="",
         ):
-            json_data["FEATURES"].append(
-                {
-                    "AIRCRAFT_MANUFACTURE_DATE": self.clean_val(d),
-                    "AIRCRAFT_MANUFACTURE_MONTH": self.clean_val(m),
-                    "AIRCRAFT_MANUFACTURE_YEAR": self.clean_val(y),
-                    "AIRCRAFT_MODEL": self.clean_val(model),
-                }
-            )
+            _data = {
+                "manufacture_date": self.clean_val(d),
+                "manufacture_month": self.clean_val(m),
+                "manufacture_year": self.clean_val(y),
+                "model": self.clean_val(model),
+            }
+            if any(_data.values()):
+                aircraft.append(_data)
 
-        # Extract incorporation date information
-        date_of_incorporation_year_list = (
-            raw_data.get("date_of_incorporation_year", []) or []
-        )
-        date_of_incorporation_month_list = (
-            raw_data.get("date_of_incorporation_month", []) or []
-        )
-        date_of_incorporation_date_list = (
-            raw_data.get("date_of_incorporation_date", []) or []
-        )
+        if aircraft:
+            json_data["aircraft"] = json.dumps(aircraft)
 
-        # Loop through incorporation date lists using zip_longest
+        # Extract incorporation date information -> REGISTRATION_DATE (keep in FEATURES)
+        date_of_incorporation_year_list = raw_data.get("date_of_incorporation_year", []) or []
+        date_of_incorporation_month_list = raw_data.get("date_of_incorporation_month", []) or []
+        date_of_incorporation_date_list = raw_data.get("date_of_incorporation_date", []) or []
+
         for year, month, date in zip_longest(
             date_of_incorporation_year_list,
             date_of_incorporation_month_list,
@@ -742,10 +637,9 @@ class mapper:
             fillvalue="",
         ):
             try:
-                y = self.clean_val(year)  # Year
-                m = self.clean_val(month)  # Month
-                d = self.clean_val(date)  # Day
-                # Append the formatted registration date based on available components
+                y = self.clean_val(year)
+                m = self.clean_val(month)
+                d = self.clean_val(date)
                 if y and m and d:
                     json_data["FEATURES"].append({"REGISTRATION_DATE": f"{y}-{m}-{d}"})
                 elif y and m:
@@ -757,320 +651,259 @@ class mapper:
             except Exception as ex:
                 print(f"id {raw_data['uid']} date_of_incorporation parse error {ex}")
 
-        # Extract and append country of incorporation to json_data['FEATURES']
-        country_code_of_incorporation_list = (
-            raw_data.get("country_code_of_incorporation", []) or []
-        )
+        # REGISTRATION_COUNTRY -> keep in FEATURES (correct)
+        country_code_of_incorporation_list = raw_data.get("country_code_of_incorporation", []) or []
         for incorporation_code in country_code_of_incorporation_list:
             incorporation_code = self.clean_val(incorporation_code)
             if incorporation_code:
-                json_data["FEATURES"].append(
-                    {"REGISTRATION_COUNTRY": incorporation_code}
-                )
+                json_data["FEATURES"].append({"REGISTRATION_COUNTRY": incorporation_code})
 
-        # Extract and append country of origin to json_data['FEATURES']
+        # Country of origin -> payload stringified list
         country_code_of_origin_list = raw_data.get("country_code_of_origin", []) or []
+        countries_of_origin = []
         for origin_code in country_code_of_origin_list:
             origin_code = self.clean_val(origin_code)
             if origin_code:
-                json_data["FEATURES"].append({"COUNTRY": origin_code})
+                countries_of_origin.append(origin_code)
+        if countries_of_origin:
+            json_data["countries_of_origin"] = json.dumps(countries_of_origin)
 
-        # Extract and append ownership details to json_data['FEATURES']
-        percentage_of_shareholding_list = (
-            raw_data.get("association_percentage_of_shareholding", []) or []
-        )
+        # Ownership details (shareholding) -> payload stringified list
+        percentage_of_shareholding_list = raw_data.get("association_percentage_of_shareholding", []) or []
+        shareholdings = []
         for shareholding in percentage_of_shareholding_list:
             shareholding = self.clean_val(shareholding)
             if shareholding:
-                json_data["FEATURES"].append({"OWNERSHIP_DETAILS": shareholding})
+                shareholdings.append(shareholding)
+        if shareholdings:
+            json_data["shareholdings"] = json.dumps(shareholdings)
 
-        # Process age information
+        # Age -> payload
         age_in_yrs_list = raw_data.get("age", []) or []
+        ages = []
         for age in age_in_yrs_list:
             age = self.clean_val(age)
             if age:
-                json_data["FEATURES"].append({"AGE_BRACKET": age})
+                ages.append(age)
+        if ages:
+            json_data["ages"] = json.dumps(ages)
 
-        # Process contact numbers
+        # PHONE_NUMBER -> keep in FEATURES (correct)
         contact_number_list = raw_data.get("contact_number", []) or []
         for phone in contact_number_list:
             phone = self.clean_val(phone)
             if phone:
                 json_data["FEATURES"].append({"PHONE_NUMBER": phone})
 
-        # Process email addresses
+        # EMAIL_ADDRESS -> keep in FEATURES (correct)
         email_id_list = raw_data.get("email_id", []) or []
         for email in email_id_list:
             email = self.clean_val(email)
             if email:
                 json_data["FEATURES"].append({"EMAIL_ADDRESS": email})
 
-        # Process website addresses
+        # WEBSITE_ADDRESS -> keep in FEATURES (correct)
         website_list = raw_data.get("website", []) or []
         for site in website_list:
             site = self.clean_val(site)
             if site:
                 json_data["FEATURES"].append({"WEBSITE_ADDRESS": site})
 
-        # Process hair color information
+        # Physical descriptions -> payload
         color_of_hair_list = raw_data.get("color_of_hair", []) or []
+        color_of_eyes_list = raw_data.get("color_of_eyes", []) or []
+        height_list = raw_data.get("height", []) or []
+        weight_list = raw_data.get("weight", []) or []
+        distinguishing_marks_list = raw_data.get("distinguishing_marks_and_characteristics", []) or []
+
+        physical_descriptions = []
         for hair_color in color_of_hair_list:
             hair_color = self.clean_val(hair_color)
             if hair_color:
-                json_data["FEATURES"].append({"COLOR_HAIR": hair_color})
-
-        # Process eye color information
-        color_of_eyes_list = raw_data.get("color_of_eyes", []) or []
+                physical_descriptions.append({"type": "hair_color", "value": hair_color})
         for eye_color in color_of_eyes_list:
             eye_color = self.clean_val(eye_color)
             if eye_color:
-                json_data["FEATURES"].append({"COLOR_EYES": eye_color})
-
-        # Process height information
-        height_list = raw_data.get("height", []) or []
+                physical_descriptions.append({"type": "eye_color", "value": eye_color})
         for height in height_list:
             height = self.clean_val(height)
             if height:
-                json_data["FEATURES"].append({"HEIGHT": height})
-
-        # Process weight information
-        weight_list = raw_data.get("weight", []) or []
+                physical_descriptions.append({"type": "height", "value": height})
         for weight in weight_list:
             weight = self.clean_val(weight)
             if weight:
-                json_data["FEATURES"].append({"WEIGHT": weight})
-
-        # Process distinguishing marks and characteristics
-        distinguishing_marks_list = (
-            raw_data.get("distinguishing_marks_and_characteristics", []) or []
-        )
+                physical_descriptions.append({"type": "weight", "value": weight})
         for mark in distinguishing_marks_list:
             mark = self.clean_val(mark)
             if mark:
-                json_data["FEATURES"].append({"DISTINGUISHING_MARKS": mark})
+                physical_descriptions.append({"type": "distinguishing_marks", "value": mark})
+        if physical_descriptions:
+            json_data["physical_descriptions"] = json.dumps(physical_descriptions)
 
-        # Process profile summaries
+        # Profile summaries -> payload stringified list
         profile_summary_list = raw_data.get("profile_summary", []) or []
+        profile_summaries = []
         for summary in profile_summary_list:
             summary = self.clean_val(summary)
             if summary:
-                json_data["FEATURES"].append({"PROFILE_SUMMARY": summary})
+                profile_summaries.append(summary)
+        if profile_summaries:
+            json_data["profile_summaries"] = json.dumps(profile_summaries)
 
-        # Process ownership details
-        for item in raw_data.get("ownership_details", "").split("|"):
-            if item.strip():
-                json_data["FEATURES"].append({"OWNERSHIP_DETAILS": item.strip()})
+        # Ownership details (pipe-delimited) -> payload
+        ownership_details = [item.strip() for item in raw_data.get("ownership_details", "").split("|") if item.strip()]
+        if ownership_details:
+            json_data["ownership_details"] = json.dumps(ownership_details)
 
-        # Process remarks
-        for item in raw_data.get("remarks", "").split("|"):
-            if item.strip():
-                json_data["FEATURES"].append({"REMARKS": item.strip()})
+        # Remarks -> payload
+        remarks = [item.strip() for item in raw_data.get("remarks", "").split("|") if item.strip()]
+        if remarks:
+            json_data["remarks"] = json.dumps(remarks)
 
-        # Process subject country
+        # Subject country -> payload stringified list
         subject_country_list = raw_data.get("subject_country", []) or []
+        subject_countries = []
         for country in subject_country_list:
             country = self.clean_val(country)
             if country:
-                json_data["FEATURES"].append({"SUBJECT_COUNTRY": country})
+                subject_countries.append(country)
+        if subject_countries:
+            json_data["subject_countries"] = json.dumps(subject_countries)
 
-        # Process official name
+        # Official name, official name local, ISO code, etc. -> root payload scalars
         official_name = self.clean_val(raw_data.get("official_name", ""))
         if official_name:
-            json_data["FEATURES"].append({"OFFICIAL_NAME": official_name})
+            json_data["official_name"] = official_name
 
-        # Process official name in local language
-        official_name_local = self.clean_val(
-            raw_data.get("official_name_in_local_language", "")
-        )
+        official_name_local = self.clean_val(raw_data.get("official_name_in_local_language", ""))
         if official_name_local:
-            json_data["FEATURES"].append(
-                {"OFFICIAL_NAME_IN_LOCAL_LANGUAGE": official_name_local}
-            )
+            json_data["official_name_local"] = official_name_local
 
-        # Process ISO code
         iso_code = self.clean_val(raw_data.get("iso_code", ""))
         if iso_code:
-            json_data["FEATURES"].append({"ISO_CODE": iso_code})
+            json_data["iso_code"] = iso_code
 
-        # Process abbreviated name
+        # abbreviated_name is a list
         abbreviated_name_list = raw_data.get("abbreviated_name", []) or []
-        for name in abbreviated_name_list:
-            name = self.clean_val(name)
-            if name:
-                json_data["FEATURES"].append({"ABBREVIATED_NAME": name})
+        abbreviated_names = [self.clean_val(n) for n in abbreviated_name_list if self.clean_val(n)]
+        if abbreviated_names:
+            json_data["abbreviated_names"] = json.dumps(abbreviated_names)
 
-        # Process official language
+        # official_language is a list
         official_language_list = raw_data.get("official_language", []) or []
-        for lang in official_language_list:
-            lang = self.clean_val(lang)
-            if lang:
-                json_data["FEATURES"].append({"OFFICIAL_LANGUAGE": lang})
+        official_languages = [self.clean_val(l) for l in official_language_list if self.clean_val(l)]
+        if official_languages:
+            json_data["official_languages"] = json.dumps(official_languages)
 
-        # Process UN LO Code
         un_lo_code = self.clean_val(raw_data.get("un_locode", ""))
         if un_lo_code:
-            json_data["FEATURES"].append({"UN_LO_CODE": un_lo_code})
+            json_data["un_locode"] = un_lo_code
 
-        # Process IATA Code
         iata_code = self.clean_val(raw_data.get("iata_code", ""))
         if iata_code:
-            json_data["FEATURES"].append({"IATA_CODE": iata_code})
+            json_data["iata_code"] = iata_code
 
-        # Process International Calling Code
-        intl_calling_code = self.clean_val(
-            raw_data.get("international_calling_code", "")
-        )
+        intl_calling_code = self.clean_val(raw_data.get("international_calling_code", ""))
         if intl_calling_code:
-            json_data["FEATURES"].append(
-                {"INTERNATIONAL_CALLING_CODE": intl_calling_code}
-            )
+            json_data["international_calling_code"] = intl_calling_code
 
-        # Process fax numbers
+        # FAX -> fix to PHONE_TYPE=FAX, PHONE_NUMBER
         fax_number_list = raw_data.get("fax_number", []) or []
         for fax in fax_number_list:
             fax = self.clean_val(fax)
             if fax:
-                json_data["FEATURES"].append({"FAX_NUMBER": fax})
+                json_data["FEATURES"].append({"PHONE_TYPE": "FAX", "PHONE_NUMBER": fax})
 
-        for item in raw_data.get("pep_status", "").split("|"):
-            if item.strip():
-                json_data["FEATURES"].append({"STATUS_PEP": item.strip()})
+        # PEP status details, sanctions status details, etc. -> payload
+        pep_status_list = [item.strip() for item in raw_data.get("pep_status", "").split("|") if item.strip()]
+        if pep_status_list:
+            json_data["pep_status_detail"] = json.dumps(pep_status_list)
 
-        # Process PEP remarks
-        pep_remarks_list = raw_data.get("pep_remarks", []) or []
-        for remark in pep_remarks_list:
-            remark = self.clean_val(remark)
-            if remark:
-                json_data["FEATURES"].append({"PEP_REMARKS": remark})
+        pep_remarks = [self.clean_val(r) for r in (raw_data.get("pep_remarks", []) or []) if self.clean_val(r)]
+        if pep_remarks:
+            json_data["pep_remarks"] = json.dumps(pep_remarks)
 
-        # Process Sanction remarks
-        sanction_remarks_list = raw_data.get("sanctions_remarks", []) or []
-        for remark in sanction_remarks_list:
-            remark = self.clean_val(remark)
-            if remark:
-                json_data["FEATURES"].append({"SANCTION_REMARKS": remark})
+        sanction_remarks = [
+            self.clean_val(r) for r in (raw_data.get("sanctions_remarks", []) or []) if self.clean_val(r)
+        ]
+        if sanction_remarks:
+            json_data["sanction_remarks"] = json.dumps(sanction_remarks)
 
-        # Process Watchlist remarks
-        watchlist_remarks_list = raw_data.get("watchlists_remarks", []) or []
-        for remark in watchlist_remarks_list:
-            remark = self.clean_val(remark)
-            if remark:
-                json_data["FEATURES"].append({"WATCHLIST_REMARKS": remark})
+        watchlist_remarks = [
+            self.clean_val(r) for r in (raw_data.get("watchlists_remarks", []) or []) if self.clean_val(r)
+        ]
+        if watchlist_remarks:
+            json_data["watchlist_remarks"] = json.dumps(watchlist_remarks)
 
-        # Process Enforcement remarks
-        enforcement_remarks_list = raw_data.get("enforcement_remarks", []) or []
-        for remark in enforcement_remarks_list:
-            remark = self.clean_val(remark)
-            if remark:
-                json_data["FEATURES"].append({"ENFORCEMENT_REMARKS": remark})
+        enforcement_remarks = [
+            self.clean_val(r) for r in (raw_data.get("enforcement_remarks", []) or []) if self.clean_val(r)
+        ]
+        if enforcement_remarks:
+            json_data["enforcement_remarks"] = json.dumps(enforcement_remarks)
 
-        # Process APC remarks
-        apc_remarks_list = raw_data.get("apc_remarks", []) or []
-        for remark in apc_remarks_list:
-            remark = self.clean_val(remark)
-            if remark:
-                json_data["FEATURES"].append({"APC_REMARKS": remark})
+        apc_remarks = [self.clean_val(r) for r in (raw_data.get("apc_remarks", []) or []) if self.clean_val(r)]
+        if apc_remarks:
+            json_data["apc_remarks"] = json.dumps(apc_remarks)
 
-        # Process sanctions status
+        # Status scalars -> root payload
         sanctions_status = self.clean_val(raw_data.get("sanctions_status", ""))
         if sanctions_status:
-            json_data["FEATURES"].append({"STATUS_SANCTION": sanctions_status})
+            json_data["sanctions_status_detail"] = sanctions_status
 
-        # Process watchlist status
         watchlist_status = self.clean_val(raw_data.get("watchlists_status", ""))
         if watchlist_status:
-            json_data["FEATURES"].append({"STATUS_WATCHLIST": watchlist_status})
+            json_data["watchlist_status_detail"] = watchlist_status
 
-        # Process sanctions status
         apc_status = self.clean_val(raw_data.get("apc_status", ""))
         if apc_status:
-            json_data["FEATURES"].append({"STATUS_APC": apc_status})
+            json_data["apc_status_detail"] = apc_status
 
-        # Process sanctions status
         enforcement_status = self.clean_val(raw_data.get("enforcement_status", ""))
         if enforcement_status:
-            json_data["FEATURES"].append({"STATUS_ENFORCEMENT": enforcement_status})
+            json_data["enforcement_status_detail"] = enforcement_status
 
-        # Process update category
+        # Change category -> root payload
         change_category = self.clean_val(raw_data.get("update_category", ""))
         if change_category:
-            json_data["FEATURES"].append({"CHANGE_CATEGORY": change_category})
+            json_data["change_category"] = change_category
 
-        # Append PEP, sanction, and watchlist statuses to json_data
-        # Function to convert string representations to boolean
+        # Boolean statuses -> keep at root (correct)
         def str_to_bool(value):
             if isinstance(value, str):
-                value = value.lower()  # Normalize to lowercase
+                value = value.lower()
                 if value in ("true", "t", "1"):
                     return "True"
                 elif value in ("false", "f", "0"):
                     return "False"
-            return (
-                "True" if bool(value) else "False"
-            )  # Convert to boolean and return as string
+            return "True" if bool(value) else "False"
 
-        # Extract and set statuses related to PEP, sanctions, and watchlists
-        json_data["PEP_STATUS"] = str_to_bool(
-            raw_data.get("is_pep", False)
-        )  # Default to False if not found
-        json_data["SANCTION_STATUS"] = str_to_bool(
-            raw_data.get("is_sanction", False)
-        )  # Default to False if not found
-        json_data["WATCHLIST_STATUS"] = str_to_bool(
-            raw_data.get("is_watchlist", False)
-        )  # Default to False if not found
-        json_data["ENFORCEMENT_STATUS"] = str_to_bool(
-            raw_data.get("is_enforcement", False)
-        )  # Default to False if not found
-        json_data["APC_STATUS"] = str_to_bool(
-            raw_data.get("is_apc", False)
-        )  # Default to False if not found
+        json_data["PEP_STATUS"] = str_to_bool(raw_data.get("is_pep", False))
+        json_data["SANCTION_STATUS"] = str_to_bool(raw_data.get("is_sanction", False))
+        json_data["WATCHLIST_STATUS"] = str_to_bool(raw_data.get("is_watchlist", False))
+        json_data["ENFORCEMENT_STATUS"] = str_to_bool(raw_data.get("is_enforcement", False))
+        json_data["APC_STATUS"] = str_to_bool(raw_data.get("is_apc", False))
 
-        # Process sanction information as lists
+        # Sanctions -> payload stringified list
         sanction_authority_list = raw_data.get("sanctions_authority", []) or []
-        sanction_authority_country_list = (
-            raw_data.get("sanctions_authority_country", []) or []
-        )
-        sanction_action_date_date_list = (
-            raw_data.get("sanctions_action_date_date", []) or []
-        )
-        sanction_action_date_month_list = (
-            raw_data.get("sanctions_action_date_month", []) or []
-        )
-        sanction_action_date_year_list = (
-            raw_data.get("sanctions_action_date_year", []) or []
-        )
-        sanction_change_date_date_list = (
-            raw_data.get("sanctions_change_date_date", []) or []
-        )
-        sanction_change_date_month_list = (
-            raw_data.get("sanctions_change_date_month", []) or []
-        )
-        sanction_change_date_year_list = (
-            raw_data.get("sanctions_change_date_year", []) or []
-        )
+        sanction_authority_country_list = raw_data.get("sanctions_authority_country", []) or []
+        sanction_action_date_date_list = raw_data.get("sanctions_action_date_date", []) or []
+        sanction_action_date_month_list = raw_data.get("sanctions_action_date_month", []) or []
+        sanction_action_date_year_list = raw_data.get("sanctions_action_date_year", []) or []
+        sanction_change_date_date_list = raw_data.get("sanctions_change_date_date", []) or []
+        sanction_change_date_month_list = raw_data.get("sanctions_change_date_month", []) or []
+        sanction_change_date_year_list = raw_data.get("sanctions_change_date_year", []) or []
         sanction_end_date_date_list = raw_data.get("sanctions_end_date_date", []) or []
-        sanction_end_date_month_list = (
-            raw_data.get("sanctions_end_date_month", []) or []
-        )
+        sanction_end_date_month_list = raw_data.get("sanctions_end_date_month", []) or []
         sanction_end_date_year_list = raw_data.get("sanctions_end_date_year", []) or []
-        sanction_legal_action_type_list = (
-            raw_data.get("sanctions_legal_action_type", []) or []
-        )
+        sanction_legal_action_type_list = raw_data.get("sanctions_legal_action_type", []) or []
         sanction_order_number_list = raw_data.get("sanctions_order_number", []) or []
-        sanction_programme_name_list = (
-            raw_data.get("sanctions_programme_name", []) or []
-        )
-        sanction_programme_country_list = (
-            raw_data.get("sanctions_programme_country", []) or []
-        )
-        sanction_programme_country_code_list = (
-            raw_data.get("sanctions_programme_country_code", []) or []
-        )
+        sanction_programme_name_list = raw_data.get("sanctions_programme_name", []) or []
+        sanction_programme_country_list = raw_data.get("sanctions_programme_country", []) or []
+        sanction_programme_country_code_list = raw_data.get("sanctions_programme_country_code", []) or []
         sanction_authority_ids_list = raw_data.get("sanction_authority_id", []) or []
         sanction_list_names_list = raw_data.get("sanctions_list_name", []) or []
 
-        # Compile sanction data into features
+        sanctions = []
         for (
             sanction_authority,
             sanction_authority_country,
@@ -1125,47 +958,42 @@ class mapper:
             sanction_order_number = self.clean_val(sanction_order_number)
             sanction_programme_name = self.clean_val(sanction_programme_name)
             sanction_programme_country = self.clean_val(sanction_programme_country)
-            sanction_programme_country_code = self.clean_val(
-                sanction_programme_country_code
-            )
+            sanction_programme_country_code = self.clean_val(sanction_programme_country_code)
             sanction_authority_id = self.clean_val(sanction_authority_id)
             sanction_list_name = self.clean_val(sanction_list_name)
 
-            json_data["FEATURES"].append(
-                {
-                    "SANCTION_AUTHORITY": sanction_authority,
-                    "SANCTION_AUTHORITY_COUNTRY": sanction_authority_country,
-                    "SANCTION_ACTION_DATE_DATE": sanction_action_date_date,
-                    "SANCTION_ACTION_DATE_MONTH": sanction_action_date_month,
-                    "SANCTION_ACTION_DATE_YEAR": sanction_action_date_year,
-                    "SANCTION_CHANGE_DATE_DATE": sanction_change_date_date,
-                    "SANCTION_CHANGE_DATE_MONTH": sanction_change_date_month,
-                    "SANCTION_CHANGE_DATE_YEAR": sanction_change_date_year,
-                    "SANCTION_END_DATE_DATE": sanction_end_date_date,
-                    "SANCTION_END_DATE_MONTH": sanction_end_date_month,
-                    "SANCTION_END_DATE_YEAR": sanction_end_date_year,
-                    "SANCTION_LEGAL_ACTION_TYPE": sanction_legal_action_type,
-                    "SANCTION_ORDER_NUMBER": sanction_order_number,
-                    "SANCTION_PROGRAMME_NAME": sanction_programme_name,
-                    "SANCTION_PROGRAMME_COUNTRY": sanction_programme_country,
-                    "SANCTION_PROGRAMME_COUNTRY_CODE": sanction_programme_country_code,
-                    "SANCTION_AUTHORITY_ID": sanction_authority_id,
-                    "SANCTION_LIST_NAME": sanction_list_name,
-                }
-            )
+            _data = {
+                "authority": sanction_authority,
+                "authority_country": sanction_authority_country,
+                "action_date_date": sanction_action_date_date,
+                "action_date_month": sanction_action_date_month,
+                "action_date_year": sanction_action_date_year,
+                "change_date_date": sanction_change_date_date,
+                "change_date_month": sanction_change_date_month,
+                "change_date_year": sanction_change_date_year,
+                "end_date_date": sanction_end_date_date,
+                "end_date_month": sanction_end_date_month,
+                "end_date_year": sanction_end_date_year,
+                "legal_action_type": sanction_legal_action_type,
+                "order_number": sanction_order_number,
+                "programme_name": sanction_programme_name,
+                "programme_country": sanction_programme_country,
+                "programme_country_code": sanction_programme_country_code,
+                "authority_id": sanction_authority_id,
+                "list_name": sanction_list_name,
+            }
+            if any(_data.values()):
+                sanctions.append(_data)
 
-        # Process associated individual and entity information as lists
-        associated_individual_name_list = (
-            raw_data.get("association_associated_individual_name", []) or []
-        )
-        associated_individual_position_list = (
-            raw_data.get("association_associated_individual_position", []) or []
-        )
-        associated_entities_name_list = (
-            raw_data.get("association_associated_entities_name", []) or []
-        )
+        if sanctions:
+            json_data["sanctions"] = json.dumps(sanctions)
 
-        # Compile associated data into features
+        # Associated -> payload stringified list
+        associated_individual_name_list = raw_data.get("association_associated_individual_name", []) or []
+        associated_individual_position_list = raw_data.get("association_associated_individual_position", []) or []
+        associated_entities_name_list = raw_data.get("association_associated_entities_name", []) or []
+
+        associated = []
         for (
             associated_individual_name,
             associated_individual_position,
@@ -1176,50 +1004,42 @@ class mapper:
             associated_entities_name_list,
         ):
             associated_individual_name = self.clean_val(associated_individual_name)
-            associated_individual_position = self.clean_val(
-                associated_individual_position
-            )
+            associated_individual_position = self.clean_val(associated_individual_position)
             associated_entities_name = self.clean_val(associated_entities_name)
 
-            json_data["FEATURES"].append(
-                {
-                    "ASSOCIATED_INDIVIDUAL_NAME": associated_individual_name,
-                    "ASSOCIATED_INDIVIDUAL_POSITION": associated_individual_position,
-                    "ASSOCIATED_ENTITIES_NAME": associated_entities_name,
-                }
-            )
+            _data = {
+                "individual_name": associated_individual_name,
+                "individual_position": associated_individual_position,
+                "entities_name": associated_entities_name,
+            }
+            if any(_data.values()):
+                associated.append(_data)
 
-        # Extract and append restrictions to json_data['FEATURES']
+        if associated:
+            json_data["associated"] = json.dumps(associated)
+
+        # Restrictions -> payload stringified list
         restrictions_list = raw_data.get("restrictions", []) or []
-        for restrictions in restrictions_list:
-            restrictions = self.clean_val(restrictions)
-            if restrictions:
-                json_data["FEATURES"].append({"RESTRICTIONS": restrictions})
+        restrictions = []
+        for restriction in restrictions_list:
+            restriction = self.clean_val(restriction)
+            if restriction:
+                restrictions.append(restriction)
+        if restrictions:
+            json_data["restrictions"] = json.dumps(restrictions)
 
-        # Extract lists from raw_data related to watchlist information
+        # Watchlists -> payload stringified list
         watchlist_authority_list = raw_data.get("watchlists_authority", []) or []
         watchlist_list_name_list = raw_data.get("watchlists_list_name", []) or []
-        watchlist_list_abbreviation_list = (
-            raw_data.get("watchlists_list_abbreviation", []) or []
-        )
-        watchlist_authority_country_list = (
-            raw_data.get("watchlists_authority_country", []) or []
-        )
-        watchlist_action_date_date_list = (
-            raw_data.get("watchlists_action_date_date", []) or []
-        )
-        watchlist_action_date_month_list = (
-            raw_data.get("watchlists_action_date_month", []) or []
-        )
-        watchlist_action_date_year_list = (
-            raw_data.get("watchlists_action_date_year", []) or []
-        )
-        watchlist_additional_information_list = (
-            raw_data.get("watchlists_additional_information", []) or []
-        )
+        watchlist_list_abbreviation_list = raw_data.get("watchlists_list_abbreviation", []) or []
+        watchlist_authority_country_list = raw_data.get("watchlists_authority_country", []) or []
+        watchlist_action_date_date_list = raw_data.get("watchlists_action_date_date", []) or []
+        watchlist_action_date_month_list = raw_data.get("watchlists_action_date_month", []) or []
+        watchlist_action_date_year_list = raw_data.get("watchlists_action_date_year", []) or []
+        watchlist_additional_information_list = raw_data.get("watchlists_additional_information", []) or []
         watchlist_list_id_list = raw_data.get("watchlists_list_id", []) or []
 
-        # Loop through the watchlist-related lists simultaneously
+        watchlists = []
         for (
             watchlist_authority,
             watchlist_list_name,
@@ -1248,73 +1068,47 @@ class mapper:
             watchlist_action_date_date = self.clean_val(watchlist_action_date_date)
             watchlist_action_date_month = self.clean_val(watchlist_action_date_month)
             watchlist_action_date_year = self.clean_val(watchlist_action_date_year)
-            watchlist_additional_information = self.clean_val(
-                watchlist_additional_information
-            )
+            watchlist_additional_information = self.clean_val(watchlist_additional_information)
             watchlist_list_id = self.clean_val(watchlist_list_id)
 
-            # Append each watchlist-related attribute to json_data['FEATURES']
-            json_data["FEATURES"].append(
-                {
-                    "WATCHLIST_AUTHORITY": watchlist_authority,
-                    "WATCHLIST_LIST_NAME": watchlist_list_name,
-                    "WATCHLIST_LIST_ABBREVIATION": watchlist_list_abbreviation,
-                    "WATCHLIST_AUTHORITY_COUNTRY": watchlist_authority_country,
-                    "WATCHLIST_ACTION_DATE_DATE": watchlist_action_date_date,
-                    "WATCHLIST_ACTION_DATE_MONTH": watchlist_action_date_month,
-                    "WATCHLIST_ACTION_DATE_YEAR": watchlist_action_date_year,
-                    "WATCHLIST_ADDITIONAL_INFORMATION": watchlist_additional_information,
-                    "WATCHLIST_LIST_ID": watchlist_list_id,
-                }
-            )
+            _data = {
+                "authority": watchlist_authority,
+                "list_name": watchlist_list_name,
+                "list_abbreviation": watchlist_list_abbreviation,
+                "authority_country": watchlist_authority_country,
+                "action_date_date": watchlist_action_date_date,
+                "action_date_month": watchlist_action_date_month,
+                "action_date_year": watchlist_action_date_year,
+                "additional_information": watchlist_additional_information,
+                "list_id": watchlist_list_id,
+            }
+            if any(_data.values()):
+                watchlists.append(_data)
 
-        # Extract lists from raw_data related to Enforcement information
-        enforcement_legal_action_type_list = (
-            raw_data.get("enforcement_legal_action_type", []) or []
-        )
-        enforcement_legal_action_date_day_list = (
-            raw_data.get("enforcement_legal_action_date_day", []) or []
-        )
-        enforcement_legal_action_date_month_list = (
-            raw_data.get("enforcement_legal_action_date_month", []) or []
-        )
-        enforcement_legal_action_date_year_list = (
-            raw_data.get("enforcement_legal_action_date_year", []) or []
-        )
-        enforcement_imprisonment_or_restriction_list = (
-            raw_data.get("enforcement_imprisonment_or_restriction", []) or []
-        )
+        if watchlists:
+            json_data["watchlists"] = json.dumps(watchlists)
+
+        # Enforcement -> payload stringified list
+        enforcement_legal_action_type_list = raw_data.get("enforcement_legal_action_type", []) or []
+        enforcement_legal_action_date_day_list = raw_data.get("enforcement_legal_action_date_day", []) or []
+        enforcement_legal_action_date_month_list = raw_data.get("enforcement_legal_action_date_month", []) or []
+        enforcement_legal_action_date_year_list = raw_data.get("enforcement_legal_action_date_year", []) or []
+        enforcement_imprisonment_or_restriction_list = raw_data.get("enforcement_imprisonment_or_restriction", []) or []
         enforcement_fine_amount_in_local_currency_list = (
             raw_data.get("enforcement_fine_amount_in_local_currency", []) or []
         )
-        enforcement_name_of_local_currency_list = (
-            raw_data.get("enforcement_name_of_local_currency", []) or []
-        )
-        enforcement_fine_amount_in_usd_list = (
-            raw_data.get("enforcement_fine_amount_in_usd", []) or []
-        )
-        enforcement_conversion_rate_list = (
-            raw_data.get("enforcement_conversion_rate", []) or []
-        )
-        enforcement_primary_regulators_list = (
-            raw_data.get("enforcement_primary_regulators", []) or []
-        )
-        enforcement_stated_regulations_list = (
-            raw_data.get("enforcement_stated_regulations", []) or []
-        )
-        enforcement_enforcement_list_name_list = (
-            raw_data.get("enforcement_enforcement_list_name", []) or []
-        )
-        enforcement_profile_summary_list = (
-            raw_data.get("enforcement_profile_summary", []) or []
-        )
-        enforcement_reasoning_for_legal_actions_list = (
-            raw_data.get("enforcement_reasoning_for_legal_actions", []) or []
-        )
+        enforcement_name_of_local_currency_list = raw_data.get("enforcement_name_of_local_currency", []) or []
+        enforcement_fine_amount_in_usd_list = raw_data.get("enforcement_fine_amount_in_usd", []) or []
+        enforcement_conversion_rate_list = raw_data.get("enforcement_conversion_rate", []) or []
+        enforcement_primary_regulators_list = raw_data.get("enforcement_primary_regulators", []) or []
+        enforcement_stated_regulations_list = raw_data.get("enforcement_stated_regulations", []) or []
+        enforcement_enforcement_list_name_list = raw_data.get("enforcement_enforcement_list_name", []) or []
+        enforcement_profile_summary_list = raw_data.get("enforcement_profile_summary", []) or []
+        enforcement_reasoning_for_legal_actions_list = raw_data.get("enforcement_reasoning_for_legal_actions", []) or []
         enforcement_taxonomy_list = raw_data.get("enforcement_taxonomy", []) or []
         enforcement_event_id_list = raw_data.get("enforcement_event_id", []) or []
 
-        # Loop through the Enforcement-related lists simultaneously
+        enforcements = []
         for (
             enforcement_legal_action_type,
             enforcement_legal_action_date_day,
@@ -1350,70 +1144,48 @@ class mapper:
             enforcement_taxonomy_list,
             enforcement_event_id_list,
         ):
-            enforcement_legal_action_type = self.clean_val(
-                enforcement_legal_action_type
-            )
-            enforcement_legal_action_date_day = self.clean_val(
-                enforcement_legal_action_date_day
-            )
-            enforcement_legal_action_date_month = self.clean_val(
-                enforcement_legal_action_date_month
-            )
-            enforcement_legal_action_date_year = self.clean_val(
-                enforcement_legal_action_date_year
-            )
-            enforcement_imprisonment_or_restriction = self.clean_val(
-                enforcement_imprisonment_or_restriction
-            )
-            enforcement_fine_amount_in_local_currency = self.clean_val(
-                enforcement_fine_amount_in_local_currency
-            )
-            enforcement_name_of_local_currency = self.clean_val(
-                enforcement_name_of_local_currency
-            )
-            enforcement_fine_amount_in_usd = self.clean_val(
-                enforcement_fine_amount_in_usd
-            )
+            enforcement_legal_action_type = self.clean_val(enforcement_legal_action_type)
+            enforcement_legal_action_date_day = self.clean_val(enforcement_legal_action_date_day)
+            enforcement_legal_action_date_month = self.clean_val(enforcement_legal_action_date_month)
+            enforcement_legal_action_date_year = self.clean_val(enforcement_legal_action_date_year)
+            enforcement_imprisonment_or_restriction = self.clean_val(enforcement_imprisonment_or_restriction)
+            enforcement_fine_amount_in_local_currency = self.clean_val(enforcement_fine_amount_in_local_currency)
+            enforcement_name_of_local_currency = self.clean_val(enforcement_name_of_local_currency)
+            enforcement_fine_amount_in_usd = self.clean_val(enforcement_fine_amount_in_usd)
             enforcement_conversion_rate = self.clean_val(enforcement_conversion_rate)
-            enforcement_primary_regulators = self.clean_val(
-                enforcement_primary_regulators
-            )
-            enforcement_stated_regulations = self.clean_val(
-                enforcement_stated_regulations
-            )
-            enforcement_enforcement_list_name = self.clean_val(
-                enforcement_enforcement_list_name
-            )
+            enforcement_primary_regulators = self.clean_val(enforcement_primary_regulators)
+            enforcement_stated_regulations = self.clean_val(enforcement_stated_regulations)
+            enforcement_enforcement_list_name = self.clean_val(enforcement_enforcement_list_name)
             enforcement_profile_summary = self.clean_val(enforcement_profile_summary)
-            enforcement_reasoning_for_legal_actions = self.clean_val(
-                enforcement_reasoning_for_legal_actions
-            )
+            enforcement_reasoning_for_legal_actions = self.clean_val(enforcement_reasoning_for_legal_actions)
             enforcement_taxonomy = self.clean_val(enforcement_taxonomy)
             enforcement_event_id = self.clean_val(enforcement_event_id)
 
-            # Append each Enforcement-related attribute to json_data['FEATURES']
-            json_data["FEATURES"].append(
-                {
-                    "ENFORCEMENT_LEGAL_ACTION_TYPE": enforcement_legal_action_type,
-                    "ENFORCEMENT_LEGAL_ACTION_DATE_DAY": enforcement_legal_action_date_day,
-                    "ENFORCEMENT_LEGAL_ACTION_DATE_MONTH": enforcement_legal_action_date_month,
-                    "ENFORCEMENT_LEGAL_ACTION_DATE_YEAR": enforcement_legal_action_date_year,
-                    "ENFORCEMENT_IMPRISONMENT_OR_RESTRICTION": enforcement_imprisonment_or_restriction,
-                    "ENFORCEMENT_FINE_AMOUNT_IN_LOCAL_CURRENCY": enforcement_fine_amount_in_local_currency,
-                    "ENFORCEMENT_NAME_OF_LOCAL_CURRENCY": enforcement_name_of_local_currency,
-                    "ENFORCEMENT_FINE_AMOUNT_IN_USD": enforcement_fine_amount_in_usd,
-                    "ENFORCEMENT_CONVERSION_RATE": enforcement_conversion_rate,
-                    "ENFORCEMENT_PRIMARY_REGULATORS": enforcement_primary_regulators,
-                    "ENFORCEMENT_STATED_REGULATIONS": enforcement_stated_regulations,
-                    "ENFORCEMENT_ENFORCEMENT_LIST_NAME": enforcement_enforcement_list_name,
-                    "ENFORCEMENT_PROFILE_SUMMARY": enforcement_profile_summary,
-                    "ENFORCEMENT_REASONING_FOR_LEGAL_ACTIONS": enforcement_reasoning_for_legal_actions,
-                    "ENFORCEMENT_TAXONOMY": enforcement_taxonomy,
-                    "ENFORCEMENT_EVENT_ID": enforcement_event_id,
-                }
-            )
+            _data = {
+                "legal_action_type": enforcement_legal_action_type,
+                "legal_action_date_day": enforcement_legal_action_date_day,
+                "legal_action_date_month": enforcement_legal_action_date_month,
+                "legal_action_date_year": enforcement_legal_action_date_year,
+                "imprisonment_or_restriction": enforcement_imprisonment_or_restriction,
+                "fine_amount_in_local_currency": enforcement_fine_amount_in_local_currency,
+                "name_of_local_currency": enforcement_name_of_local_currency,
+                "fine_amount_in_usd": enforcement_fine_amount_in_usd,
+                "conversion_rate": enforcement_conversion_rate,
+                "primary_regulators": enforcement_primary_regulators,
+                "stated_regulations": enforcement_stated_regulations,
+                "enforcement_list_name": enforcement_enforcement_list_name,
+                "profile_summary": enforcement_profile_summary,
+                "reasoning_for_legal_actions": enforcement_reasoning_for_legal_actions,
+                "taxonomy": enforcement_taxonomy,
+                "event_id": enforcement_event_id,
+            }
+            if any(_data.values()):
+                enforcements.append(_data)
 
-        # Extract lists from raw_data related to APC information
+        if enforcements:
+            json_data["enforcements"] = json.dumps(enforcements)
+
+        # APC -> payload stringified list
         apc_group_id_list = raw_data.get("apc_group_id", []) or []
         apc_article_id_list = raw_data.get("apc_article_id", []) or []
         apc_date_published_list = raw_data.get("date_published_date", []) or []
@@ -1449,7 +1221,7 @@ class mapper:
         apc_regulator_list = raw_data.get("apc_regulator", []) or []
         apc_penalty_amount_list = raw_data.get("apc_penalty_amount", []) or []
 
-        # Loop through the APC-related lists simultaneously
+        apc_items = []
         for (
             apc_group_id,
             apc_article_id,
@@ -1521,46 +1293,49 @@ class mapper:
             apc_regulator_list,
             apc_penalty_amount_list,
         ):
-            json_data["FEATURES"].append(
-                {
-                    "APC_GROUP_ID": self.clean_val(apc_group_id),
-                    "APC_ARTICLE_ID": self.clean_val(apc_article_id),
-                    "APC_DATE_PUBLISHED": self.clean_val(apc_date_published),
-                    "APC_MONTH_PUBLISHED": self.clean_val(apc_month_published),
-                    "APC_YEAR_PUBLISHED": self.clean_val(apc_year_published),
-                    "APC_HEADING": self.clean_val(apc_heading),
-                    "APC_NEWS_LINK": self.clean_val(apc_news_link),
-                    "APC_LANGUAGE": self.clean_val(apc_language),
-                    "APC_NEWS_PROVIDER": self.clean_val(apc_news_provider),
-                    "APC_SENTIMENT": self.clean_val(apc_sentiment),
-                    "APC_SUMMARY": self.clean_val(apc_summary),
-                    "APC_SOURCE_REPUTATION": self.clean_val(apc_source_reputation),
-                    "APC_ARTICLE_TEXT": self.clean_val(apc_article_text),
-                    "APC_SUMMARY_LEDE": self.clean_val(apc_summary_lede),
-                    "APC_FRAMEWORKS_NAME": self.clean_val(apc_frameworks_name),
-                    "APC_FRAMEWORKS_VERSION": self.clean_val(apc_frameworks_version),
-                    "APC_RISK_SCORE": self.clean_val(apc_risk_score),
-                    "APC_CATEGORIES": self.clean_val(apc_categories),
-                    "APC_RISK_AREAS": self.clean_val(apc_risk_areas),
-                    "APC_EVENTS": self.clean_val(apc_events),
-                    "APC_KEYWORDS": self.clean_val(apc_keywords),
-                    "APC_EVENT_STAGE": self.clean_val(apc_event_stage),
-                    "APC_NER_TYPE": self.clean_val(apc_ner_type),
-                    "APC_NER_ENTITIES": self.clean_val(apc_ner_entities),
-                    "APC_NER_ATTRIBUTES": self.clean_val(apc_ner_attributes),
-                    "APC_RELEVANCE_SCORE": self.clean_val(apc_relevance_score),
-                    "APC_LOCATIONS": self.clean_val(apc_locations),
-                    "APC_ARTICLE_CATEGORY": self.clean_val(apc_article_category),
-                    "APC_NETWORK_MAP": self.clean_val(apc_network_map),
-                    "APC_RISK_EVENT": self.clean_val(apc_risk_event),
-                    "APC_EVENT_CHRONOLOGY": self.clean_val(apc_event_chronology),
-                    "APC_REGULATORY_ACTION": self.clean_val(apc_regulatory_action),
-                    "APC_REGULATOR": self.clean_val(apc_regulator),
-                    "APC_PENALTY_AMOUNT": self.clean_val(apc_penalty_amount),
-                }
-            )
+            _data = {
+                "group_id": self.clean_val(apc_group_id),
+                "article_id": self.clean_val(apc_article_id),
+                "date_published": self.clean_val(apc_date_published),
+                "month_published": self.clean_val(apc_month_published),
+                "year_published": self.clean_val(apc_year_published),
+                "heading": self.clean_val(apc_heading),
+                "news_link": self.clean_val(apc_news_link),
+                "language": self.clean_val(apc_language),
+                "news_provider": self.clean_val(apc_news_provider),
+                "sentiment": self.clean_val(apc_sentiment),
+                "summary": self.clean_val(apc_summary),
+                "source_reputation": self.clean_val(apc_source_reputation),
+                "article_text": self.clean_val(apc_article_text),
+                "summary_lede": self.clean_val(apc_summary_lede),
+                "frameworks_name": self.clean_val(apc_frameworks_name),
+                "frameworks_version": self.clean_val(apc_frameworks_version),
+                "risk_score": self.clean_val(apc_risk_score),
+                "categories": self.clean_val(apc_categories),
+                "risk_areas": self.clean_val(apc_risk_areas),
+                "events": self.clean_val(apc_events),
+                "keywords": self.clean_val(apc_keywords),
+                "event_stage": self.clean_val(apc_event_stage),
+                "ner_type": self.clean_val(apc_ner_type),
+                "ner_entities": self.clean_val(apc_ner_entities),
+                "ner_attributes": self.clean_val(apc_ner_attributes),
+                "relevance_score": self.clean_val(apc_relevance_score),
+                "locations": self.clean_val(apc_locations),
+                "article_category": self.clean_val(apc_article_category),
+                "network_map": self.clean_val(apc_network_map),
+                "risk_event": self.clean_val(apc_risk_event),
+                "event_chronology": self.clean_val(apc_event_chronology),
+                "regulatory_action": self.clean_val(apc_regulatory_action),
+                "regulator": self.clean_val(apc_regulator),
+                "penalty_amount": self.clean_val(apc_penalty_amount),
+            }
+            if any(_data.values()):
+                apc_items.append(_data)
 
-        # Extract court-related lists from raw_data safely using ast.literal_eval
+        if apc_items:
+            json_data["apc"] = json.dumps(apc_items)
+
+        # Litigation -> payload stringified list
         court_name_list = raw_data.get("litigation_court_name", []) or []
         number_of_cases_list = raw_data.get("litigation_number_of_cases", []) or []
         case_number_list = raw_data.get("litigation_case_number", []) or []
@@ -1568,7 +1343,7 @@ class mapper:
         litigation_date_month_list = raw_data.get("litigation_date_month", []) or []
         litigation_date_year_list = raw_data.get("litigation_date_year", []) or []
 
-        # Loop through court-related lists simultaneously
+        litigations = []
         for (
             court_name,
             number_of_cases,
@@ -1584,21 +1359,22 @@ class mapper:
             litigation_date_month_list,
             litigation_date_year_list,
         ):
-            json_data["FEATURES"].append(
-                {
-                    "LITIGATION_COURT_NAME": self.clean_val(court_name),
-                    "LITIGATION_NUMBER_OF_CASES": self.clean_val(number_of_cases),
-                    "LITIGATION_CASE_NUMBER": self.clean_val(case_number),
-                    "LITIGATION_DATE_DATE": self.clean_val(litigation_date_date),
-                    "LITIGATION_DATE_MONTH": self.clean_val(litigation_date_month),
-                    "LITIGATION_DATE_YEAR": self.clean_val(litigation_date_year),
-                }
-            )
+            _data = {
+                "court_name": self.clean_val(court_name),
+                "number_of_cases": self.clean_val(number_of_cases),
+                "case_number": self.clean_val(case_number),
+                "date_date": self.clean_val(litigation_date_date),
+                "date_month": self.clean_val(litigation_date_month),
+                "date_year": self.clean_val(litigation_date_year),
+            }
+            if any(_data.values()):
+                litigations.append(_data)
 
-        # Extract lists from raw_data related to pincode information
-        pincode_high_risk_area = self.clean_val(
-            raw_data.get("pincode_high_risk_area", "")
-        )
+        if litigations:
+            json_data["litigations"] = json.dumps(litigations)
+
+        # Pincode -> payload stringified list
+        pincode_high_risk_area = self.clean_val(raw_data.get("pincode_high_risk_area", ""))
         pincode_risk_type = self.clean_val(raw_data.get("pincode_risk_type", ""))
         pincode_city = self.clean_val(raw_data.get("pincode_city", ""))
         pincode_district = self.clean_val(raw_data.get("pincode_district", ""))
@@ -1615,49 +1391,32 @@ class mapper:
                 pincode_country,
             ]
         ):
-            json_data["FEATURES"].append(
-                {
-                    "PINCODE_HIGH_RISK_AREA": pincode_high_risk_area,
-                    "PINCODE_RISK_TYPE": pincode_risk_type,
-                    "PINCODE_CITY": pincode_city,
-                    "PINCODE_DISTRICT": pincode_district,
-                    "PINCODE_STATE": pincode_state,
-                    "PINCODE_COUNTRY": pincode_country,
-                }
-            )
+            pincode_data = {
+                "high_risk_area": pincode_high_risk_area,
+                "risk_type": pincode_risk_type,
+                "city": pincode_city,
+                "district": pincode_district,
+                "state": pincode_state,
+                "country": pincode_country,
+            }
+            json_data["pincode"] = json.dumps([pincode_data])
 
-        # Process others information as lists
+        # Others -> payload stringified list
         others_authority_list = raw_data.get("others_authority", []) or []
         others_list_name_list = raw_data.get("others_list_name", []) or []
         others_order_list = raw_data.get("others_order", []) or []
         others_programme_list = raw_data.get("others_programme", []) or []
-        others_event_start_date_date_list = (
-            raw_data.get("others_event_start_date_date", []) or []
-        )
-        others_event_start_date_month_list = (
-            raw_data.get("others_event_start_date_month", []) or []
-        )
-        others_event_start_date_year_list = (
-            raw_data.get("others_event_start_date_year", []) or []
-        )
-        others_event_end_date_date_list = (
-            raw_data.get("others_event_end_date_date", []) or []
-        )
-        others_event_end_date_month_list = (
-            raw_data.get("others_event_end_date_month", []) or []
-        )
-        others_event_end_date_year_list = (
-            raw_data.get("others_event_end_date_year", []) or []
-        )
-        others_associated_subject_type_list = (
-            raw_data.get("others_associated_subject_type", []) or []
-        )
+        others_event_start_date_date_list = raw_data.get("others_event_start_date_date", []) or []
+        others_event_start_date_month_list = raw_data.get("others_event_start_date_month", []) or []
+        others_event_start_date_year_list = raw_data.get("others_event_start_date_year", []) or []
+        others_event_end_date_date_list = raw_data.get("others_event_end_date_date", []) or []
+        others_event_end_date_month_list = raw_data.get("others_event_end_date_month", []) or []
+        others_event_end_date_year_list = raw_data.get("others_event_end_date_year", []) or []
+        others_associated_subject_type_list = raw_data.get("others_associated_subject_type", []) or []
         others_event_summary_list = raw_data.get("others_event_summary", []) or []
-        others_reasoning_taxonomy_list = (
-            raw_data.get("others_reasoning_taxonomy", []) or []
-        )
+        others_reasoning_taxonomy_list = raw_data.get("others_reasoning_taxonomy", []) or []
 
-        # Loop through the lists simultaneously and clean values
+        others = []
         for (
             others_authority,
             others_list_name,
@@ -1687,39 +1446,26 @@ class mapper:
             others_event_summary_list,
             others_reasoning_taxonomy_list,
         ):
-            json_data["FEATURES"].append(
-                {
-                    "OTHERS_AUTHORITY": self.clean_val(others_authority),
-                    "OTHERS_LIST_NAME": self.clean_val(others_list_name),
-                    "OTHERS_ORDER": self.clean_val(others_order),
-                    "OTHERS_PROGRAMME": self.clean_val(others_programme),
-                    "OTHERS_EVENT_START_DATE_DATE": self.clean_val(
-                        others_event_start_date_date
-                    ),
-                    "OTHERS_EVENT_START_DATE_MONTH": self.clean_val(
-                        others_event_start_date_month
-                    ),
-                    "OTHERS_EVENT_START_DATE_YEAR": self.clean_val(
-                        others_event_start_date_year
-                    ),
-                    "OTHERS_EVENT_END_DATE_DATE": self.clean_val(
-                        others_event_end_date_date
-                    ),
-                    "OTHERS_EVENT_END_DATE_MONTH": self.clean_val(
-                        others_event_end_date_month
-                    ),
-                    "OTHERS_EVENT_END_DATE_YEAR": self.clean_val(
-                        others_event_end_date_year
-                    ),
-                    "OTHERS_ASSOCIATED_SUBJECT_TYPE": self.clean_val(
-                        others_associated_subject_type
-                    ),
-                    "OTHERS_EVENT_SUMMARY": self.clean_val(others_event_summary),
-                    "OTHERS_REASONING_TAXONOMY": self.clean_val(
-                        others_reasoning_taxonomy
-                    ),
-                }
-            )
+            _data = {
+                "authority": self.clean_val(others_authority),
+                "list_name": self.clean_val(others_list_name),
+                "order": self.clean_val(others_order),
+                "programme": self.clean_val(others_programme),
+                "event_start_date_date": self.clean_val(others_event_start_date_date),
+                "event_start_date_month": self.clean_val(others_event_start_date_month),
+                "event_start_date_year": self.clean_val(others_event_start_date_year),
+                "event_end_date_date": self.clean_val(others_event_end_date_date),
+                "event_end_date_month": self.clean_val(others_event_end_date_month),
+                "event_end_date_year": self.clean_val(others_event_end_date_year),
+                "associated_subject_type": self.clean_val(others_associated_subject_type),
+                "event_summary": self.clean_val(others_event_summary),
+                "reasoning_taxonomy": self.clean_val(others_reasoning_taxonomy),
+            }
+            if any(_data.values()):
+                others.append(_data)
+
+        if others:
+            json_data["others"] = json.dumps(others)
 
         # Remove empty dictionaries or dictionaries with only empty values
         json_data["FEATURES"] = [
@@ -1732,7 +1478,14 @@ class mapper:
         json_data = self.remove_empty_tags(json_data)
         self.capture_mapped_stats(json_data)
 
-        return json_data
+        # Reorder: DATA_SOURCE, RECORD_ID, FEATURES, then payload
+        ordered = {}
+        ordered["DATA_SOURCE"] = json_data.pop("DATA_SOURCE", "")
+        ordered["RECORD_ID"] = json_data.pop("RECORD_ID", "")
+        ordered["FEATURES"] = json_data.pop("FEATURES", [])
+        ordered.update(json_data)
+
+        return ordered
 
     # ----------------------------------------
     def load_reference_data(self):
@@ -1833,7 +1586,7 @@ class mapper:
                 if len(value) == 1:
                     value = value[0]
                 elif len(value) == 0:
-                    return ""  # empty list → blank
+                    return ""  # empty list -> blank
             if value is None:
                 return ""
             value = str(value).strip()
@@ -1857,21 +1610,15 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-i", "--input_file", dest="input_file", help="the name of the input file"
-    )
-    parser.add_argument(
-        "-o", "--output_file", dest="output_file", help="the name of the output file"
-    )
+    parser.add_argument("-i", "--input_file", dest="input_file", help="the name of the input file")
+    parser.add_argument("-o", "--output_file", dest="output_file", help="the name of the output file")
     parser.add_argument(
         "-l",
         "--log_file",
         dest="log_file",
         help="optional name of the statistics log file",
     )
-    parser.add_argument(
-        "-d", "--data_source", dest="data_source", help="data source code (required)"
-    )
+    parser.add_argument("-d", "--data_source", dest="data_source", help="data source code (required)")
     args = parser.parse_args()
 
     if not args.input_file or not os.path.exists(args.input_file):
@@ -1911,12 +1658,8 @@ if __name__ == "__main__":
             break
 
     elapsed_mins = round((time.time() - proc_start_time) / 60, 1)
-    run_status = (
-        "completed in" if not shut_down else "aborted after"
-    ) + f" {elapsed_mins} minutes"
-    print(
-        f"{input_row_count} rows processed, {output_row_count} rows written, {run_status}\n"
-    )
+    run_status = ("completed in" if not shut_down else "aborted after") + f" {elapsed_mins} minutes"
+    print(f"{input_row_count} rows processed, {output_row_count} rows written, {run_status}\n")
 
     output_file_handle.close()
     input_file_handle.close()
