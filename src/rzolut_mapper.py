@@ -1,15 +1,12 @@
 #! /usr/bin/env python3
 import argparse
-import ast
 import csv
-import hashlib
 import json
 import os
-import random
 import signal
 import sys
 import time
-from datetime import datetime
+from collections import Counter
 from itertools import zip_longest
 
 
@@ -20,7 +17,6 @@ class mapper:
     def __init__(self):
 
         self.load_reference_data()
-        self.stat_pack = {}
 
     # ----------------------------------------
     def map(self, raw_data, input_row_num=None):
@@ -152,9 +148,20 @@ class mapper:
             fillvalue="",
         ):
             try:
-                # Fix: removed ADDR_LINE2 = country (wrong mapping)
+                # Map RZOLUT address types to Senzing ADDR_TYPE
+                clean_addr_type = self.clean_val(addr_type)
+
+                # Birth addresses -> PLACE_OF_BIRTH feature
+                if clean_addr_type.upper() == "BIRTH":
+                    pob_parts = [self.clean_val(p) for p in [city, province, country_code] if self.clean_val(p)]
+                    if pob_parts:
+                        json_data["FEATURES"].append({"PLACE_OF_BIRTH": ", ".join(pob_parts)})
+                    continue
+
+                mapped_addr_type = self.address_type_map.get(clean_addr_type.upper(), clean_addr_type)
+
                 _data = {
-                    "ADDR_TYPE": self.clean_val(addr_type),
+                    "ADDR_TYPE": mapped_addr_type,
                     "ADDR_LINE1": self.clean_val(street),
                     "ADDR_CITY": self.clean_val(city),
                     "ADDR_STATE": self.clean_val(province),
@@ -254,10 +261,11 @@ class mapper:
                 alias_name = self.clean_val(alias_name)
 
                 if alias_name:
+                    name_type = self.clean_val(alias_type).upper() or "AKA"
                     if record_type == "PERSON":
-                        json_data["FEATURES"].append({"NAME_TYPE": "AKA", "NAME_FULL": alias_name})
+                        json_data["FEATURES"].append({"NAME_TYPE": name_type, "NAME_FULL": alias_name})
                     else:
-                        json_data["FEATURES"].append({"NAME_TYPE": "AKA", "NAME_ORG": alias_name})
+                        json_data["FEATURES"].append({"NAME_TYPE": name_type, "NAME_ORG": alias_name})
 
         # Retrieve relationship-related data
         relationship_subject_type_list = raw_data.get("association_subject_type", []) or []
@@ -461,117 +469,25 @@ class mapper:
                 except Exception as ex:
                     print(f"id {raw_data['uid']} identifier_expiry_date parse error {ex}")
 
-                # Update statistics for identifier type
-                self.update_stat("!IDTYPE", raw_type, value)
-
-                if raw_type == "LEGAL ENTITY IDENTIFIER (LEI)":
-                    json_data["FEATURES"].append({"LEI_NUMBER": value})
-
-                elif raw_type == "DRIVER'S LICENSE NUMBER":
-                    json_data["FEATURES"].append(
-                        {
-                            "DRIVERS_LICENSE_NUMBER": value,
-                            "DRIVERS_LICENSE_STATE": country_code,
-                        }
-                    )
-
-                elif raw_type == "SOCIAL SECURITY NUMBER (SSN)":
-                    json_data["FEATURES"].append({"SSN_NUMBER": value})
-
-                elif raw_type == "NATIONAL PROVIDER IDENTIFIER":
-                    json_data["FEATURES"].append({"NPI_NUMBER": value})
-
-                # Fix: drop date attributes from passport
-                elif raw_type == "PASSPORT NUMBER":
-                    json_data["FEATURES"].append(
-                        {
-                            "PASSPORT_NUMBER": value,
-                            "PASSPORT_COUNTRY": country_code,
-                        }
-                    )
-                elif raw_type == "DIRECTOR IDENTIFICATION NUMBER (DIN)":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "DIN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "CORPORATE IDENTIFICATION NUMBER (CIN)":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "CIN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "LIMITED LIABILITY PARTNERSHIP IDENTIFICATION NUMBER (LLPIN)":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "LLPIN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "FCRN NUMBER":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "FCRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "FIRM REGISTRATION NUMBER (FRN)":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "FRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "CEDULA NUMBER":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "CEDULA", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "PRIMARY STATE REGISTRATION NUMBER (OGRN)":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "OGRN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "SYST\u00c8ME D'IDENTIFICATION DU R\u00c9PERTOIRE DES ENTREPRISES (SIREN) NUMBER":
-                    json_data["FEATURES"].append(
-                        {"NATIONAL_ID_TYPE": "SIREN", "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
-                    )
-                # Fix: drop date attributes from PAN tax_id
-                elif raw_type == "PERMANENT ACCOUNT NUMBER (PAN)":
-                    json_data["FEATURES"].append(
-                        {
-                            "TAX_ID_TYPE": "PAN",
-                            "TAX_ID_NUMBER": value,
-                            "TAX_ID_COUNTRY": country_code,
-                        }
-                    )
-                # Fix: drop date attributes from LICENSE
-                elif raw_type == "LICENSE NUMBER":
-                    json_data["FEATURES"].append(
-                        {
-                            "OTHER_ID_TYPE": "LICENSE",
-                            "OTHER_ID_NUMBER": value,
-                            "OTHER_ID_COUNTRY": country_code,
-                        }
-                    )
-                elif raw_type == "CADASTRO NACIONAL DA PESSOA JUR\u00cdDICA (CNPJ)":
-                    json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "CNPJ", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "GST NUMBER":
-                    json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "GST", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "TAX IDENTIFICATION NUMBER (TIN)":
-                    json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "TIN", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "CADASTRO DE PESSOAS F\u00cdSICAS (CPF)":
-                    json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "CPF", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "INN NUMBER":
-                    json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "INN", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
-                    )
-                elif raw_type == "VALUE ADDED TAX NUMBER (VAT)":
-                    json_data["FEATURES"].append(
-                        {"TAX_ID_TYPE": "VAT", "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
-                    )
-                # Fix: drop date attributes from fallback OTHER_ID
+                # Look up identifier type in codes CSV
+                entry = self.identifier_codes.get(raw_type)
+                if entry:
+                    entry["values"][value] += 1
+                    if entry["disposition"] == "FEATURE" and entry["feature"]:
+                        feature = self.build_identifier_feature(entry, value, country_code)
+                        if feature:
+                            json_data["FEATURES"].append(feature)
+                    else:
+                        # PAYLOAD or MISSING — store as record payload
+                        payload_key = f"identifier_{entry['type_value'] or raw_type}"
+                        json_data[payload_key] = value
                 else:
-                    json_data["FEATURES"].append(
-                        {
-                            "OTHER_ID_TYPE": raw_type,
-                            "OTHER_ID_NUMBER": value,
-                            "OTHER_ID_COUNTRY": country_code,
-                        }
-                    )
+                    # Unknown code — track and store as payload
+                    if raw_type not in self.unmapped_codes:
+                        self.unmapped_codes[raw_type] = Counter()
+                    self.unmapped_codes[raw_type][value] += 1
+                    payload_key = f"identifier_{raw_type}"
+                    json_data[payload_key] = value
             except Exception as ex:
                 print(f"id {raw_data['uid']} identifier parse error {ex}")
 
@@ -1474,9 +1390,8 @@ class mapper:
             if any(value for value in item.values() if value not in [None, "", [], {}])
         ]
 
-        # --remove empty attributes and capture the stats
+        # --remove empty attributes
         json_data = self.remove_empty_tags(json_data)
-        self.capture_mapped_stats(json_data)
 
         # Reorder: DATA_SOURCE, RECORD_ID, FEATURES, then payload
         ordered = {}
@@ -1494,6 +1409,132 @@ class mapper:
         self.variant_data = {}
         self.variant_data["GARBAGE_VALUES"] = ["NULL", "NUL", "N/A", "~"]
 
+        # --address type mapping (RZOLUT -> Senzing ADDR_TYPE)
+        self.address_type_map = {
+            # Individual (Birth handled separately as PLACE_OF_BIRTH)
+            "OFFICE": "BUSINESS",
+            # Organization — BUSINESS
+            "BUSINESS OFFICE": "BUSINESS",
+            "REGISTERED OFFICE": "BUSINESS",
+            "REPRESENTATIVE OFFICE": "BUSINESS",
+            "PLACE OF REGISTRATION": "BUSINESS",
+            "PRINCIPAL PLACE OF BUSINESS": "BUSINESS",
+        }
+        # Corporate Office, Factory, Headquarter, Regional Office, Warehouse, Others -> pass through
+
+        # --identifier codes from CSV
+        self.unmapped_codes = {}  # key -> Counter of values
+        crosswalk_path = os.path.join(os.path.dirname(__file__), "rzolut_codes.csv")
+        self.codes_file_path = crosswalk_path
+        self.identifier_codes = {}
+        self.identifier_codes_order = []  # preserve CSV row order
+        with open(crosswalk_path, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                key = row["code"].strip().upper()
+                self.identifier_codes_order.append(key)
+                self.identifier_codes[key] = {
+                    "feature": row["senzing_feature"].strip(),
+                    "type_value": row["senzing_type_value"].strip(),
+                    "disposition": row["disposition"].strip(),
+                    "code": row["code"].strip(),
+                    "num": row["num"].strip(),
+                    "code_type": row.get("code_type", "Identifier").strip(),
+                    "country": row.get("country", "").strip(),
+                    "subject_type": row.get("subject_type", "").strip(),
+                    "notes": row.get("notes", "").strip(),
+                    "values": Counter(),
+                }
+
+    # ----------------------------------------
+    def build_identifier_feature(self, entry, value, country_code):
+        """Build a Senzing feature dict from a crosswalk entry."""
+        feature = entry["feature"]
+        type_value = entry["type_value"]
+
+        if feature in ("LEI_NUMBER", "SSN_NUMBER", "NPI_NUMBER", "DUNS_NUMBER"):
+            return {feature: value}
+        elif feature == "SSN":
+            return {"SSN_NUMBER": value}
+        elif feature == "DRLIC":
+            return {"DRIVERS_LICENSE_NUMBER": value, "DRIVERS_LICENSE_STATE": country_code}
+        elif feature == "PASSPORT":
+            return {"PASSPORT_NUMBER": value, "PASSPORT_COUNTRY": country_code}
+        elif feature == "NATIONAL_ID":
+            return {"NATIONAL_ID_TYPE": type_value, "NATIONAL_ID_NUMBER": value, "NATIONAL_ID_COUNTRY": country_code}
+        elif feature == "TAX_ID":
+            return {"TAX_ID_TYPE": type_value, "TAX_ID_NUMBER": value, "TAX_ID_COUNTRY": country_code}
+        elif feature == "OTHER_ID":
+            return {"OTHER_ID_TYPE": type_value, "OTHER_ID_NUMBER": value, "OTHER_ID_COUNTRY": country_code}
+        elif feature == "ACCOUNT":
+            feat = {"ACCOUNT_NUMBER": value}
+            if type_value:
+                feat["ACCOUNT_DOMAIN"] = type_value
+            return feat
+        else:
+            return {"OTHER_ID_TYPE": feature, "OTHER_ID_NUMBER": value, "OTHER_ID_COUNTRY": country_code}
+
+    # ----------------------------------------
+    def write_codes_file(self):
+        """Rewrite rzolut_codes.csv with count/unique_count/top_5_values columns."""
+        fieldnames = [
+            "num", "code_type", "code", "country", "subject_type",
+            "senzing_feature", "senzing_type_value", "disposition", "notes",
+            "count", "unique_count", "top_5_values",
+        ]
+
+        # Build rows: known codes in original order, then unmapped
+        rows = []
+        for key in self.identifier_codes_order:
+            entry = self.identifier_codes[key]
+            counter = entry["values"]
+            count = sum(counter.values())
+            unique_count = len(counter)
+            top5 = ", ".join(f"{v} ({c})" for v, c in counter.most_common(5)) if count else ""
+            rows.append({
+                "num": entry["num"],
+                "code_type": entry["code_type"],
+                "code": entry["code"],
+                "country": entry["country"],
+                "subject_type": entry["subject_type"],
+                "senzing_feature": entry["feature"],
+                "senzing_type_value": entry["type_value"],
+                "disposition": entry["disposition"],
+                "notes": entry["notes"],
+                "count": count if count else "",
+                "unique_count": unique_count if unique_count else "",
+                "top_5_values": top5,
+            })
+
+        next_num = len(self.identifier_codes) + 1
+        for code in sorted(self.unmapped_codes.keys()):
+            counter = self.unmapped_codes[code]
+            count = sum(counter.values())
+            unique_count = len(counter)
+            top5 = ", ".join(f"{v} ({c})" for v, c in counter.most_common(5))
+            rows.append({
+                "num": next_num,
+                "code_type": "Identifier",
+                "code": code,
+                "country": "",
+                "subject_type": "",
+                "senzing_feature": "",
+                "senzing_type_value": "",
+                "disposition": "MISSING",
+                "notes": "Auto-added by mapper",
+                "count": count,
+                "unique_count": unique_count,
+                "top_5_values": top5,
+            })
+            next_num += 1
+
+        with open(self.codes_file_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        return len(self.unmapped_codes)
+
     # -----------------------------------
     def clean_value(self, raw_value):
         if raw_value is None:
@@ -1507,27 +1548,6 @@ class mapper:
             return ""
         return new_value
 
-    # -----------------------------------
-    def compute_record_hash(self, target_dict, attr_list=None):
-        if attr_list:
-            string_to_hash = ""
-            for attr_name in sorted(attr_list):
-                string_to_hash += (
-                    " ".join(str(target_dict[attr_name]).split()).upper()
-                    if attr_name in target_dict and target_dict[attr_name]
-                    else ""
-                ) + "|"
-        else:
-            string_to_hash = json.dumps(target_dict, sort_keys=True)
-        return hashlib.md5(bytes(string_to_hash, "utf-8")).hexdigest()
-
-    # ----------------------------------------
-    def format_date(self, raw_date):
-        try:
-            return datetime.strftime(dateparse(raw_date), "%Y-%m-%d")
-        except:
-            self.update_stat("!INFO", "BAD_DATE", raw_date)
-            return ""
 
     # ----------------------------------------
     def remove_empty_tags(self, d):
@@ -1547,42 +1567,6 @@ class mapper:
         self.remove_empty_tags(data)
         return json.dumps(data)
 
-    # ----------------------------------------
-    def update_stat(self, cat1, cat2, example=None):
-
-        if cat1 not in self.stat_pack:
-            self.stat_pack[cat1] = {}
-        if cat2 not in self.stat_pack[cat1]:
-            self.stat_pack[cat1][cat2] = {}
-            self.stat_pack[cat1][cat2]["count"] = 0
-
-        self.stat_pack[cat1][cat2]["count"] += 1
-        if example:
-            if "examples" not in self.stat_pack[cat1][cat2]:
-                self.stat_pack[cat1][cat2]["examples"] = []
-            if example not in self.stat_pack[cat1][cat2]["examples"]:
-                if len(self.stat_pack[cat1][cat2]["examples"]) < 5:
-                    self.stat_pack[cat1][cat2]["examples"].append(example)
-                else:
-                    randomSampleI = random.randint(2, 4)
-                    self.stat_pack[cat1][cat2]["examples"][randomSampleI] = example
-        return
-
-    # ----------------------------------------
-    def capture_mapped_stats(self, json_data):
-
-        if "DATA_SOURCE" in json_data:
-            data_source = json_data["DATA_SOURCE"]
-        else:
-            data_source = "UNKNOWN_DSRC"
-
-        for key1 in json_data:
-            if type(json_data[key1]) != list:
-                self.update_stat(data_source, key1, json_data[key1])
-            else:
-                for subrecord in json_data[key1]:
-                    for key2 in subrecord:
-                        self.update_stat(data_source, key2, subrecord[key2])
 
     # ----------------------------------------
     def clean_val(self, value):
@@ -1617,12 +1601,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input_file", dest="input_file", help="the name of the input file")
     parser.add_argument("-o", "--output_file", dest="output_file", help="the name of the output file")
-    parser.add_argument(
-        "-l",
-        "--log_file",
-        dest="log_file",
-        help="optional name of the statistics log file",
-    )
     parser.add_argument("-d", "--data_source", dest="data_source", help="data source code (required)")
     args = parser.parse_args()
 
@@ -1668,5 +1646,12 @@ if __name__ == "__main__":
 
     output_file_handle.close()
     input_file_handle.close()
+
+    # Rewrite codes CSV with counters
+    unmapped_count = mapper_obj.write_codes_file()
+    types_seen = sum(1 for e in mapper_obj.identifier_codes.values() if sum(e["values"].values()) > 0)
+    print(f"Identifier codes updated in rzolut_codes.csv: {types_seen} types seen")
+    if unmapped_count:
+        print(f"  {unmapped_count} new codes added (disposition: MISSING)")
 
     sys.exit(0)
